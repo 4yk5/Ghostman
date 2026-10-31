@@ -5,9 +5,9 @@ from textual.widgets import (
 )
 from textual.binding import Binding
 
-from network import NetworkEngine
-from webhook_server import WebhookServer
-from storage import StorageManager
+from ghostman.network import NetworkEngine
+from ghostman.webhook_server import WebhookServer
+from ghostman.storage import StorageManager
 
 class GhostmanApp(App):
     CSS_PATH = "styles.tcss"

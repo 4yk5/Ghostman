@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+import asyncio
 import sys
 
 if sys.platform == "win32":
@@ -8,7 +8,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from app import GhostmanApp
+from ghostman.app import GhostmanApp
 
 def main():
     app = GhostmanApp()

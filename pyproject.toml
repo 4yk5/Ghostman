@@ -1,0 +1,30 @@
+[project]
+name = "ghostman"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    {name = "4yk5"},
+    {name = "R1shy"}
+]
+requires-python = ">=3.14"
+dependencies = [
+    "httpx>=0.28.1",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+    "textual>=8.2.8",
+]
+
+[project.scripts]
+ghostman = "ghostman:main"
+test = "ghostman:run_tests"
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1",
+]

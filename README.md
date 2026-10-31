@@ -136,7 +136,6 @@ Commit `.ghostman/` directly to your repository so your entire team can share th
 - [ ] Dynamic environment variables (`{{BASE_URL}}`, `{{AUTH_TOKEN}}`)
 - [ ] Export requests to cURL format (`Ctrl + C`)
 - [ ] Standalone binary release (zero Python install required)
-
 ---
 
 ## 📄 License

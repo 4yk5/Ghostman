@@ -16,17 +16,18 @@ from app import GhostmanApp
 from network import NetworkEngine
 from webhook_server import WebhookServer
 from storage import StorageManager
+from textual.widgets import Input, TextArea, Select, ListView, Tabs
 
 async def run_tests():
     print("Running Ghostman test suite...")
 
-    # 1. Storage tests
+    # Storage
     sm = StorageManager()
     cols = sm.load_collections()
     assert len(cols) > 0, "Collections failed to initialize"
     print("  [+] Storage: OK")
 
-    # 2. Network engine tests
+    # Network engine
     net = NetworkEngine()
     r = await net.execute_request("GET", "https://jsonplaceholder.typicode.com/posts/1")
     assert r["success"] and r["status_code"] == 200, "Network GET failed"
@@ -38,7 +39,7 @@ async def run_tests():
     assert not r_fail["success"], "Error handling check failed"
     print("  [+] Network Engine: OK")
 
-    # 3. Webhook listener tests
+    # Webhook server
     received = []
     ws = WebhookServer(port=9098, on_hook_received=lambda h: received.append(h))
     await ws.start()
@@ -52,20 +53,36 @@ async def run_tests():
     await ws.stop()
     print("  [+] Webhook Server: OK")
 
-    # 4. TUI Smoke tests
+    # TUI Interactions
     app = GhostmanApp()
     async with app.run_test() as pilot:
+        # Save request integrity
+        save_btn = app.query_one("#save-btn")
+        await pilot.click(save_btn)
+        await pilot.pause(0.2)
+        await pilot.click(save_btn)
+        await pilot.pause(0.2)
+
+        # New request action
+        new_btn = app.query_one("#new-req-btn")
+        await pilot.click(new_btn)
+        await pilot.pause(0.1)
+        assert app.query_one("#url-input", Input).value == ""
+
+        # Execute request
+        app.query_one("#url-input", Input).value = "https://jsonplaceholder.typicode.com/posts/1"
         await pilot.press("ctrl+s")
         await pilot.pause(1.0)
         assert app.query_one("#tab-response-pane").display
 
+        # Webhook toggle via hotkey
         await pilot.press("ctrl+w")
         await pilot.pause(0.2)
         assert app.webhook_server.is_running
         await pilot.press("ctrl+w")
         await pilot.pause(0.2)
         assert not app.webhook_server.is_running
-    print("  [+] TUI Pilot: OK")
+    print("  [+] TUI Interactions: OK")
 
     print("\nAll tests passed successfully.")
 

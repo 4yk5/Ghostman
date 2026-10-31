@@ -51,22 +51,20 @@ class StorageManager:
             self.save_collections(DEFAULT_COLLECTIONS)
 
     def load_collections(self):
-        # 1. Try YAML if available and file exists
         if HAS_YAML and self.yaml_file.exists():
             try:
                 with open(self.yaml_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
-                    if isinstance(data, list) and len(data) > 0:
+                    if isinstance(data, list) and data:
                         return data
             except Exception:
                 pass
 
-        # 2. Try JSON (zero dependencies, works on any Python out of the box)
         if self.json_file.exists():
             try:
                 with open(self.json_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if isinstance(data, list) and len(data) > 0:
+                    if isinstance(data, list) and data:
                         return data
             except Exception:
                 pass
@@ -74,17 +72,15 @@ class StorageManager:
         return DEFAULT_COLLECTIONS
 
     def save_collections(self, collections: list):
-        # Always save JSON as reliable fallback
         try:
             with open(self.json_file, "w", encoding="utf-8") as f:
                 json.dump(collections, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"[Ghostman] Warning: unable to write JSON collections: {e}")
+            pass
 
-        # Also save YAML if module is available
         if HAS_YAML:
             try:
                 with open(self.yaml_file, "w", encoding="utf-8") as f:
                     yaml.dump(collections, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
-            except Exception as e:
-                print(f"[Ghostman] Warning: unable to write YAML collections: {e}")
+            except Exception:
+                pass

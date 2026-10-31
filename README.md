@@ -7,139 +7,109 @@
                                                    
 ```
 
-# 👻 Ghostman
+# Ghostman 👻
 
-> **A fast, keyboard-driven API client and webhook inspector right in your terminal.**  
-> *No cloud accounts. No 1GB Electron bloat. 100% Local-first.*
+> **A fast, keyboard-driven terminal API client and webhook inspector.**  
+> *No mandatory cloud accounts. No 1GB Electron bloat. 100% local-first.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![UI: Textual](https://img.shields.io/badge/UI-Textual-bd93f9.svg)](https://github.com/Textualize/textual)
 
-![Ghostman Main Studio](assets/ghostman-main.svg)
+<p align="center">
+  <img src="assets/ghostman-preview.png" alt="Ghostman Interface" width="100%">
+</p>
 
 ---
 
-## 💡 Why Ghostman?
+## Why Ghostman?
 
-Modern API clients like **Postman** and **Insomnia** started as lightweight developer utilities, but evolved into heavy enterprise platforms:
-- ❌ Force cloud logins, team workspaces, and telemetry
-- ❌ Consume 800MB - 1.5GB of RAM just idling in the background
-- ❌ Sluggish startup times
-- ❌ Require external tunnels (ngrok, webhook.site) just to inspect a local webhook callback
+Modern API clients started as simple developer utilities, but turned into heavy enterprise platforms:
+- Mandatory cloud logins and team workspaces just to test local endpoints
+- 800MB–1.5GB RAM consumption idling in the background
+- Sluggish startup times
+- Needing external tunnels (`ngrok`, `webhook.site`) just to inspect a local webhook
 
-**Ghostman** is built from scratch for developers who want raw speed, terminal workflows, and complete local privacy:
-- ⚡ **Instant Startup:** Launches in under 200ms directly in your terminal.
-- 🔒 **100% Local-First:** All collections and requests live as plain YAML in `.ghostman/collections.yaml`. Check them into Git alongside your codebase.
-- 🛰️ **Built-in Webhook Receiver:** Hit `Ctrl + W` to spin up an ephemeral server on `http://127.0.0.1:9090` to catch, inspect, and replay webhooks live on screen.
-- ⌨️ **Vim & Keyboard-First:** Full keyboard navigation — switch collections, compose JSON bodies, and fire requests without touching the mouse.
+**Ghostman** is built for developers who live in their terminal:
+
+- ⚡ **Instant Startup:** Launches in ~150ms directly inside your CLI.
+- 🔒 **100% Local-First:** All collections live in `.ghostman/` on your disk (plain JSON or YAML). Check them into Git alongside your codebase.
+- 🛰️ **Built-in Webhook Receiver:** Press `Ctrl + W` to spin up a local listener (`http://127.0.0.1:9090`) to catch, inspect, and replay webhooks in real-time.
+- ⌨️ **Keyboard-Driven:** Navigate, compose JSON payloads, and fire requests without touching the mouse.
 
 ---
 
-## 📸 Interface Tour
+## Visual Tour
 
-### 1. High-Speed Response & Telemetry
-Instant latency tracking in milliseconds, HTTP status badges, payload size metrics, and auto-formatted JSON syntax highlighting:
-![Ghostman Response](assets/ghostman-response.svg)
+### 1. High-Speed Telemetry & Formatted Responses
+Instant latency tracking, HTTP status badges, payload size metrics, and syntax-highlighted JSON rendering:
+<p align="center">
+  <img src="assets/ghostman-response.svg" alt="Response Telemetry" width="100%">
+</p>
 
 ### 2. Live Webhook Stream
-Catch incoming HTTP callbacks from Stripe, GitHub, Shopify, or local microservices in real-time:
-![Ghostman Webhooks](assets/ghostman-webhook.svg)
+Catch incoming HTTP callbacks from Stripe, GitHub, Shopify, or local microservices live:
+<p align="center">
+  <img src="assets/ghostman-webhook.svg" alt="Live Webhooks" width="100%">
+</p>
 
 ---
 
-## ⚡ Core Features
+## Quick Start
 
-- **Full HTTP Method Suite:** Seamlessly compose `GET`, `POST`, `PUT`, `DELETE`, and `PATCH` requests with custom headers and raw JSON payloads.
-- **Performance Telemetry:** Measure DNS + TTFB latency in real-time to monitor API endpoint bottlenecks.
-- **Embedded Webhook Server:** No need to configure third-party reverse proxies during development; catch incoming webhooks locally.
-- **Pretty JSON Formatting:** Automatically indents, formats, and colorizes JSON payloads with Pygments and Rich.
-- **Collection Explorer:** Organize API endpoints into collections, persistent across sessions.
-- **Cyberpunk Dark TUI:** Optimized contrast for developer eyes with high-DPI terminal support.
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
+### Requirements
 - Python 3.10 or newer
 
 ### Installation
 
 ```bash
-# 1. Clone the repository
+# Clone the repository
 git clone https://github.com/4yk5/ghostman.git
 cd ghostman
 
-# 2. Install dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# 3. Launch Ghostman
+# Run Ghostman
 python main.py
 ```
 
-> **Windows tip:** You can also simply double-click `run.bat` in the project root!
+> **Windows:** You can also run Ghostman by double-clicking `run.bat` in the project root.
 
 ---
 
-## ⌨️ Keybindings & Controls
+## Keyboard Shortcuts
 
-| Shortcut | Description |
+| Keybinding | Action |
 | :--- | :--- |
-| `Ctrl + S` | **Send HTTP Request** (Executes call and switches to Response view) |
-| `Ctrl + W` | **Toggle Webhook Server** (Starts / Stops receiver on port 9090) |
-| `Tab` / `Shift+Tab` | Cycle focus between inputs, method selector, and tabs |
-| `Enter` | Select collection item from sidebar |
+| `Ctrl + S` | **Send HTTP Request** (Executes request & switches to Response tab) |
+| `Ctrl + K` | **Save Request** (Saves current endpoint to collections) |
+| `Ctrl + N` | **New Request** (Resets input fields) |
+| `Ctrl + W` | **Toggle Webhook Server** (Starts / Stops listener on port 9090) |
+| `Tab` / `Shift + Tab` | Navigate between controls, inputs, and tabs |
+| `Enter` | Select endpoint from sidebar / trigger button |
 | `Ctrl + Q` | **Quit Ghostman** |
 
 ---
 
-## 🛠️ Testing Webhooks Locally
+## Inspecting Webhooks Locally
 
-1. Press `Ctrl + W` inside Ghostman to start the receiver on port `9090`.
-2. Point your webhook provider (or fire a test `curl` from another terminal) to:
+1. Press `Ctrl + W` to turn on the webhook listener on port `9090`.
+2. Point your webhook provider or test client to:
    ```bash
-   curl -X POST http://127.0.0.1:9090/api/webhooks/stripe \
-        -H "Content-Type: application/json" \
-        -d '{"event": "payment_intent.succeeded", "amount": 4900}'
+   curl -X POST http://127.0.0.1:9090/webhook \
+     -H "Content-Type: application/json" \
+     -d '{"event": "payment_succeeded", "amount": 4200}'
    ```
-3. Ghostman immediately captures the incoming request, displays the headers, and parses the payload live in the **Live Webhooks** tab.
+3. Switch to the **Live Webhooks** tab: inspect headers, path, timestamp, and payload.
+4. Click any captured webhook to load its payload directly into the request editor.
 
 ---
 
-## 📁 Git-Friendly Collections
+## Contributing
 
-Ghostman stores all your requests inside `.ghostman/collections.yaml` in clean, human-readable YAML:
+Contributions, feedback, and pull requests are very welcome! Feel free to open an issue for bug reports or feature requests.
 
-```yaml
-- name: "Authentication API"
-  requests:
-    - name: "Login User"
-      method: "POST"
-      url: "https://api.example.com/v1/auth/login"
-      headers:
-        Content-Type: "application/json"
-      body: '{\n  "email": "user@example.com",\n  "password": "secretpassword"\n}'
-```
+## License
 
-Commit `.ghostman/` directly to your repository so your entire team can share the same API collections without needing cloud sync accounts.
-
----
-
-## 🗺️ Roadmap
-
-- [x] Async HTTP Engine (`httpx`) with latency telemetry
-- [x] Ephemeral Webhook Receiver (`port 9090`)
-- [x] Local YAML collection persistence
-- [x] Dark cyber TUI theme with auto JSON styling
-- [ ] 1-Click "Replay captured webhook as outbound request"
-- [ ] Dynamic environment variables (`{{BASE_URL}}`, `{{AUTH_TOKEN}}`)
-- [ ] Export requests to cURL format (`Ctrl + C`)
-- [ ] Standalone binary release (zero Python install required)
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.  
-Copyright © 2026 **4yk5**. All rights reserved.
+Released under the [MIT License](LICENSE).

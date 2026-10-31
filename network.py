@@ -8,13 +8,11 @@ class NetworkEngine:
 
     async def execute_request(self, method: str, url: str, headers: dict = None, body: str = None):
         start_time = time.perf_counter()
-        headers = headers or {}
+        headers = dict(headers) if headers else {}
         
-        # default user-agent if not provided
         if not any(k.lower() == "user-agent" for k in headers):
             headers["User-Agent"] = "Ghostman/0.1.0"
 
-        # auto-detect json body
         if body and not any(k.lower() == "content-type" for k in headers):
             try:
                 json.loads(body)
@@ -54,8 +52,8 @@ class NetworkEngine:
             elapsed_ms = (time.perf_counter() - start_time) * 1000
             return {
                 "success": False,
-                "error": f"{type(e).__name__}: {str(e)}",
+                "error": str(e),
                 "elapsed_ms": round(elapsed_ms, 2),
                 "status_code": 0,
-                "body": f"Request Failed: {str(e)}"
+                "body": f"Request Failed: {e}"
             }

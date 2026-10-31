@@ -77,7 +77,6 @@ class WebhookServer:
             }
             self.captured_hooks.append(hook_entry)
 
-            # quick 200 response
             response = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\",\"source\":\"ghostman\"}"
             writer.write(response)
             await writer.drain()

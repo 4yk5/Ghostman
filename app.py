@@ -11,11 +11,14 @@ from storage import StorageManager
 
 class GhostmanApp(App):
     CSS_PATH = "styles.tcss"
+    ENABLE_COMMAND_PALETTE = False
+
     BINDINGS = [
         Binding("ctrl+s", "send_request", "Send Request", priority=True),
-        Binding("ctrl+w", "toggle_webhook", "Toggle Webhook Server"),
-        Binding("ctrl+n", "new_request", "New Request"),
-        Binding("ctrl+q", "quit", "Quit")
+        Binding("ctrl+w", "toggle_webhook", "Toggle Webhook Server", priority=True),
+        Binding("ctrl+n", "new_request", "New Request", priority=True),
+        Binding("ctrl+k", "save_request", "Save Request", priority=True),
+        Binding("ctrl+q", "quit", "Quit", priority=True)
     ]
 
     METHODS = [
@@ -86,32 +89,52 @@ class GhostmanApp(App):
         self.query_one("#url-input").value = "https://jsonplaceholder.typicode.com/posts/1"
 
     async def on_unmount(self):
-        if self.webhook_server.is_running:
-            await self.webhook_server.stop()
+        try:
+            if self.webhook_server and self.webhook_server.is_running:
+                await self.webhook_server.stop()
+        except Exception:
+            pass
 
     def populate_sidebar(self):
-        list_view = self.query_one("#requests-list", ListView)
-        list_view.clear()
-        idx = 0
-        for col in self.collections:
-            for req in col.get("requests", []):
-                method = req.get("method", "GET")
-                name = req.get("name", "Request")
-                item = ListItem(Label(f"[{method}] {name}"), id=f"req_{idx}")
-                item.req_data = req
-                list_view.append(item)
-                idx += 1
+        try:
+            list_view = self.query_one("#requests-list", ListView)
+            list_view.clear()
+            if not isinstance(self.collections, list):
+                return
+            for col in self.collections:
+                if not isinstance(col, dict):
+                    continue
+                for req in col.get("requests", []):
+                    if not isinstance(req, dict):
+                        continue
+                    method = req.get("method", "GET").upper()
+                    name = req.get("name", "Request")
+                    item = ListItem(Label(f"[{method}] {name}"))
+                    item.req_data = req
+                    list_view.append(item)
+        except Exception as e:
+            self.notify(f"Error updating sidebar: {e}", severity="error")
 
     def on_list_view_selected(self, event: ListView.Selected):
         item = event.item
+        if not item:
+            return
         if hasattr(item, "req_data"):
             req = item.req_data
-            method = req.get("method", "GET")
+            method = req.get("method", "GET").upper()
             if method in [m[0] for m in self.METHODS]:
                 self.query_one("#method-select", Select).value = method
             self.query_one("#url-input", Input).value = req.get("url", "")
             self.query_one("#body-input", TextArea).text = req.get("body", "") or ""
             self.notify(f"Selected: {req.get('name')}", timeout=2)
+        elif hasattr(item, "hook_data"):
+            hook = item.hook_data
+            h_method = hook.get("method", "GET").upper()
+            if h_method in [m[0] for m in self.METHODS]:
+                self.query_one("#method-select", Select).value = h_method
+            self.query_one("#body-input", TextArea).text = hook.get("raw_body", "") or ""
+            self.query_one("#tabs", Tabs).active = "tab-body"
+            self.notify(f"Loaded hook payload ({hook.get('path', '/')})", timeout=2)
 
     def on_tabs_tab_activated(self, event: Tabs.TabActivated):
         tab_id = event.tab.id
@@ -121,6 +144,9 @@ class GhostmanApp(App):
 
     async def action_send_request(self):
         await self.send_http_request()
+
+    def action_save_request(self):
+        self.save_current_request()
 
     def action_new_request(self):
         self.query_one("#method-select", Select).value = "GET"
@@ -142,64 +168,75 @@ class GhostmanApp(App):
             await self.action_toggle_webhook()
 
     def save_current_request(self):
-        url = self.query_one("#url-input", Input).value.strip()
-        if not url:
-            self.notify("Cannot save request without URL", severity="warning")
-            return
-        method = self.query_one("#method-select", Select).value
-        body = self.query_one("#body-input", TextArea).text
+        try:
+            url = self.query_one("#url-input", Input).value.strip()
+            if not url:
+                self.notify("Cannot save request without URL", severity="warning")
+                return
+            method = self.query_one("#method-select", Select).value
+            body = self.query_one("#body-input", TextArea).text
 
-        path_part = url.split("://")[-1].split("?")[0].strip("/")
-        name = path_part.split("/")[-1] if "/" in path_part else path_part
-        name = name or "Endpoint"
+            path_part = url.split("://")[-1].split("?")[0].strip("/")
+            name = path_part.split("/")[-1] if "/" in path_part else path_part
+            name = name or "Endpoint"
 
-        new_req = {
-            "name": f"{method} {name[:18]}",
-            "method": method,
-            "url": url,
-            "headers": {"Content-Type": "application/json"} if body else {},
-            "body": body
-        }
+            new_req = {
+                "name": f"{method} {name[:18]}",
+                "method": method,
+                "url": url,
+                "headers": {"Content-Type": "application/json"} if body else {},
+                "body": body
+            }
 
-        if not self.collections:
-            self.collections = [{"name": "My Collection", "requests": []}]
-        self.collections[0]["requests"].append(new_req)
-        self.storage.save_collections(self.collections)
-        self.populate_sidebar()
-        self.notify(f"Saved: {new_req['name']}", timeout=2)
+            if not self.collections or not isinstance(self.collections, list):
+                self.collections = [{"name": "My Collection", "requests": []}]
+            if "requests" not in self.collections[0] or not isinstance(self.collections[0]["requests"], list):
+                self.collections[0]["requests"] = []
+            self.collections[0]["requests"].append(new_req)
+            self.storage.save_collections(self.collections)
+            self.populate_sidebar()
+            self.notify(f"Saved: {new_req['name']}", timeout=2)
+        except Exception as e:
+            self.notify(f"Error saving request: {e}", severity="error")
 
     async def send_http_request(self):
-        method = self.query_one("#method-select", Select).value
-        url = self.query_one("#url-input", Input).value.strip()
-        body = self.query_one("#body-input", TextArea).text
+        try:
+            method = self.query_one("#method-select", Select).value
+            url = self.query_one("#url-input", Input).value.strip()
+            body = self.query_one("#body-input", TextArea).text
 
-        if not url:
-            self.notify("URL cannot be empty", severity="error")
-            return
+            if not url:
+                self.notify("URL cannot be empty", severity="error")
+                return
 
-        if not url.startswith("http://") and not url.startswith("https://"):
-            url = "https://" + url
-            self.query_one("#url-input", Input).value = url
+            if not url.startswith("http://") and not url.startswith("https://"):
+                url = "https://" + url
+                self.query_one("#url-input", Input).value = url
 
-        self.query_one("#tabs", Tabs).active = "tab-response"
-        metrics = self.query_one("#metrics-bar", Label)
-        response_box = self.query_one("#response-area", TextArea)
+            self.query_one("#tabs", Tabs).active = "tab-response"
+            metrics = self.query_one("#metrics-bar", Label)
+            response_box = self.query_one("#response-area", TextArea)
 
-        metrics.update(f"Sending {method} to {url}...")
-        response_box.text = "Waiting for response..."
+            metrics.update(f"Sending {method} to {url}...")
+            response_box.text = "Waiting for response..."
 
-        res = await self.network.execute_request(method, url, body=body)
+            req_body = body if method in ["POST", "PUT", "PATCH", "DELETE"] else None
 
-        if res["success"]:
-            code = res["status_code"]
-            color = "green" if code < 400 else "red"
-            metrics.update(
-                f"[{color}]{code} {res['reason']}[/] | {res['elapsed_ms']}ms | {res['size_bytes']} bytes"
-            )
-            response_box.text = res["body"]
-        else:
-            metrics.update(f"[red]Failed[/] | {res['elapsed_ms']}ms")
-            response_box.text = res["body"]
+            res = await self.network.execute_request(method, url, body=req_body)
+
+            if res["success"]:
+                code = res["status_code"]
+                color = "green" if code < 400 else "red"
+                reason = res.get('reason') or ('OK' if code == 200 else '')
+                metrics.update(
+                    f"[{color}]{code} {reason}[/] | {res['elapsed_ms']}ms | {res['size_bytes']} bytes"
+                )
+                response_box.text = res["body"]
+            else:
+                metrics.update(f"[red]Failed[/] | {res['elapsed_ms']}ms")
+                response_box.text = res["body"]
+        except Exception as e:
+            self.notify(f"Request error: {e}", severity="error")
 
     async def action_toggle_webhook(self):
         btn = self.query_one("#webhook-toggle-btn", Button)
@@ -215,7 +252,10 @@ class GhostmanApp(App):
             except Exception as e:
                 self.notify(f"Could not bind port 9090: {e}", severity="error")
         else:
-            await self.webhook_server.stop()
+            try:
+                await self.webhook_server.stop()
+            except Exception:
+                pass
             lbl.update("Webhook Receiver: [OFFLINE] (Port 9090)")
             btn.label = "START RECEIVER"
             btn.variant = "default"
@@ -230,8 +270,10 @@ class GhostmanApp(App):
     def _add_webhook_to_ui(self, hook: dict):
         try:
             list_view = self.query_one("#webhook-list", ListView)
-            label_text = f"[{hook['timestamp']}] {hook['method']} {hook['path']} ({len(hook['raw_body'])}B)"
-            list_view.append(ListItem(Label(f"[cyan]{label_text}[/] -> {hook['body'][:40]}...")))
+            label_text = f"[{hook['timestamp']}] {hook['method']} {hook['path']} ({len(hook.get('raw_body', ''))}B)"
+            item = ListItem(Label(f"[cyan]{label_text}[/] -> {hook.get('body', '')[:40]}..."))
+            item.hook_data = hook
+            list_view.append(item)
             self.notify(f"Hook received: {hook['path']}", timeout=2)
         except Exception:
             pass

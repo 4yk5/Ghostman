@@ -17,7 +17,7 @@
 [![UI: Textual](https://img.shields.io/badge/UI-Textual-bd93f9.svg)](https://github.com/Textualize/textual)
 
 <p align="center">
-  <img src="assets/ghostman-preview.png" alt="Ghostman Terminal Studio" width="100%">
+  <img src="assets/ghostman-main.svg" alt="Ghostman Terminal Studio" width="100%">
 </p>
 
 ---

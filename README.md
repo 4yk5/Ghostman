@@ -17,99 +17,112 @@
 [![UI: Textual](https://img.shields.io/badge/UI-Textual-bd93f9.svg)](https://github.com/Textualize/textual)
 
 <p align="center">
-  <img src="assets/ghostman-preview.png" alt="Ghostman Interface" width="100%">
+  <img src="assets/ghostman-preview.png" alt="Ghostman Terminal Studio" width="100%">
 </p>
 
 ---
 
-## Why Ghostman?
+## 💡 Why Ghostman?
 
-Modern API clients started as simple developer utilities, but turned into heavy enterprise platforms:
-- Mandatory cloud logins and team workspaces just to test local endpoints
-- 800MB–1.5GB RAM consumption idling in the background
-- Sluggish startup times
-- Needing external tunnels (`ngrok`, `webhook.site`) just to inspect a local webhook
+Modern API clients (Postman, Insomnia) started as simple developer utilities, but evolved into heavy enterprise platforms:
 
-**Ghostman** is built for developers who live in their terminal:
-
-- ⚡ **Instant Startup:** Launches in ~150ms directly inside your CLI.
-- 🔒 **100% Local-First:** All collections live in `.ghostman/` on your disk (plain JSON or YAML). Check them into Git alongside your codebase.
-- 🛰️ **Built-in Webhook Receiver:** Press `Ctrl + W` to spin up a local listener (`http://127.0.0.1:9090`) to catch, inspect, and replay webhooks in real-time.
-- ⌨️ **Keyboard-Driven:** Navigate, compose JSON payloads, and fire requests without touching the mouse.
+- ❌ **Bloated Memory:** Postman idles at **800MB – 1.5GB of RAM** just sitting in the background.  
+  👉 **Ghostman runs on ~30MB of RAM.**
+- ❌ **Mandatory Cloud Lock-in:** Forced account sign-ins, team workspaces, and cloud syncing for private test requests.  
+  👉 **Ghostman is 100% local-first.** Your requests and collections stay as plain JSON/YAML on your disk (`~/.ghostman/`).
+- ❌ **Sluggish Startup:** 5 to 10 seconds of splash screens and loading spinners.  
+  👉 **Ghostman cold boots in ~150ms** directly inside your terminal.
+- ❌ **External Webhook Tunnels:** Needing ngrok, webhook.site, or third-party accounts just to inspect a local webhook payload.  
+  👉 **Ghostman has a built-in webhook listener** on port 9090 (`Ctrl + W`).
+- ❌ **Mouse-Heavy Navigation:** Constant clicking between dropdowns, sidebars, and nested dialogs.  
+  👉 **Keyboard-driven workflows.** Send with `Ctrl + S`, save with `Ctrl + K`, new request with `Ctrl + N`.
 
 ---
 
-## Visual Tour
+## 📸 Interface Tour
 
 ### 1. High-Speed Telemetry & Formatted Responses
-Instant latency tracking, HTTP status badges, payload size metrics, and syntax-highlighted JSON rendering:
+Instant latency tracking in milliseconds, HTTP status badges, payload size metrics, and syntax-highlighted JSON rendering:
+
 <p align="center">
   <img src="assets/ghostman-response.svg" alt="Response Telemetry" width="100%">
 </p>
 
 ### 2. Live Webhook Stream
-Catch incoming HTTP callbacks from Stripe, GitHub, Shopify, or local microservices live:
+Catch incoming HTTP callbacks from Stripe, GitHub, Shopify, or local microservices in real-time without leaving your terminal:
+
 <p align="center">
   <img src="assets/ghostman-webhook.svg" alt="Live Webhooks" width="100%">
 </p>
 
 ---
 
-## Quick Start
+## ⚡ Core Features
 
-### Requirements
+- **Full HTTP Method Suite:** Seamlessly compose `GET`, `POST`, `PUT`, `DELETE`, and `PATCH` requests.
+- **Performance Telemetry:** DNS + TTFB latency in real-time to monitor endpoint bottlenecks.
+- **Embedded Webhook Server:** Spin up a local server on port 9090 with one shortcut to catch incoming hooks.
+- **Zero Cloud Dependency:** Save collections as plain files in `.ghostman/` and commit them to Git.
+- **Auto-Formatting:** Automatically indents and formats JSON payloads with Rich syntax coloring.
+- **Cyberpunk Dark Theme:** Designed for readability in terminal environments with solid borders.
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
 - Python 3.10 or newer
 
 ### Installation
 
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/4yk5/ghostman.git
 cd ghostman
 
-# Install dependencies
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# Run Ghostman
+# 3. Launch Ghostman
 python main.py
 ```
 
-> **Windows:** You can also run Ghostman by double-clicking `run.bat` in the project root.
+> **Windows tip:** You can also run Ghostman by double-clicking `run.bat` in the project root!
 
 ---
 
-## Keyboard Shortcuts
+## ⌨️ Keyboard Shortcuts
 
 | Keybinding | Action |
 | :--- | :--- |
-| `Ctrl + S` | **Send HTTP Request** (Executes request & switches to Response tab) |
+| `Ctrl + S` | **Send HTTP Request** (Executes call and switches to Response view) |
 | `Ctrl + K` | **Save Request** (Saves current endpoint to collections) |
 | `Ctrl + N` | **New Request** (Resets input fields) |
 | `Ctrl + W` | **Toggle Webhook Server** (Starts / Stops listener on port 9090) |
-| `Tab` / `Shift + Tab` | Navigate between controls, inputs, and tabs |
+| `Tab` / `Shift + Tab` | Navigate between inputs, method selector, and tabs |
 | `Enter` | Select endpoint from sidebar / trigger button |
 | `Ctrl + Q` | **Quit Ghostman** |
 
 ---
 
-## Inspecting Webhooks Locally
+## 🛠️ Testing Webhooks Locally
 
-1. Press `Ctrl + W` to turn on the webhook listener on port `9090`.
-2. Point your webhook provider or test client to:
+1. Press `Ctrl + W` to start the listener on port `9090`.
+2. Send a test webhook from another terminal:
    ```bash
    curl -X POST http://127.0.0.1:9090/webhook \
      -H "Content-Type: application/json" \
      -d '{"event": "payment_succeeded", "amount": 4200}'
    ```
-3. Switch to the **Live Webhooks** tab: inspect headers, path, timestamp, and payload.
-4. Click any captured webhook to load its payload directly into the request editor.
+3. Switch to the **Live Webhooks** tab to inspect headers, timestamp, and payload.
+4. Click any captured webhook to load its payload directly into the editor.
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 Contributions, feedback, and pull requests are very welcome! Feel free to open an issue for bug reports or feature requests.
 
-## License
+## 📄 License
 
 Released under the [MIT License](LICENSE).

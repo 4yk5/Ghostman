@@ -2,7 +2,6 @@ import asyncio
 import os
 import sys
 
-# Ensure project root is in sys.path
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
@@ -15,6 +14,7 @@ async def capture():
     app = GhostmanApp()
     async with app.run_test(size=(116, 32)) as pilot:
         await pilot.pause(0.5)
+
         # 1. Main View
         main_svg_path = os.path.join(assets_dir, "ghostman-main.svg")
         with open(main_svg_path, "w", encoding="utf-8") as f:
@@ -62,28 +62,31 @@ async def capture():
 
         await app.webhook_server.stop()
 
-    # Now render high-res PNG using Playwright
+    # High-resolution, dark/transparent PNG rendering
     try:
-        from playwright.sync_api import sync_playwright
-        desktop_png = r"C:\Users\Terenax\Desktop\ghostman-preview.png"
+        from playwright.async_api import async_playwright
+        from PIL import Image
+
         asset_png = os.path.join(assets_dir, "ghostman-preview.png")
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page(viewport={"width": 1200, "height": 800}, device_scale_factor=2)
-            page.goto(f"file:///{os.path.abspath(main_svg_path)}")
-            page.wait_for_timeout(400)
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page(viewport={"width": 1200, "height": 800}, device_scale_factor=2)
+            await page.goto(f"file:///{os.path.abspath(main_svg_path)}")
+            await page.wait_for_timeout(400)
             svg_el = page.locator("svg").first
-            if svg_el.is_visible():
-                svg_el.screenshot(path=desktop_png)
-                svg_el.screenshot(path=asset_png)
-            else:
-                page.screenshot(path=desktop_png)
-                page.screenshot(path=asset_png)
-            browser.close()
-        print(f"[+] Rendered high-res PNG to {desktop_png} and {asset_png}")
+            await svg_el.screenshot(path=asset_png, omit_background=True)
+            await browser.close()
+
+        # Crop to tight bounding box
+        im = Image.open(asset_png)
+        bbox = im.getbbox()
+        if bbox:
+            cropped = im.crop(bbox)
+            cropped.save(asset_png)
+        print(f"[+] Rendered clean, tightly cropped PNG to {asset_png}")
     except Exception as e:
-        print(f"[-] Could not render PNG via playwright: {e}")
+        print(f"[-] Could not render PNG: {e}")
 
 if __name__ == "__main__":
     asyncio.run(capture())

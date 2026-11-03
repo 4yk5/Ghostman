@@ -8,11 +8,16 @@ import datetime
 import ipaddress
 import httpx
 
-from cryptography import x509
-from cryptography.x509.oid import NameOID
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
+try:
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import serialization
+except ImportError:
+    print("[!] Error: 'cryptography' is required to run test_vulnerabilities_fixed.py.")
+    print("    Install test dependencies with: pip install -e .[dev]")
+    sys.exit(1)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -276,6 +281,109 @@ async def test_chunked_transfer_encoding_webhook():
         await writer3.wait_closed()
         assert b"413 Payload Too Large" in resp3, f"Expected 413, got: {resp3[:100]}"
 
+        # D) Malformed chunk size (invalid hex) MUST return 400 Bad Request and NOT record hook
+        malformed_size_http = (
+            b"POST /malformed-size HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9096\r\n"
+            b"Transfer-Encoding: chunked\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            b"ZZ_NOT_HEX\r\n"
+            b"payload\r\n"
+            b"0\r\n\r\n"
+        )
+        reader4, writer4 = await asyncio.open_connection("127.0.0.1", 9096)
+        writer4.write(malformed_size_http)
+        await writer4.drain()
+        resp4 = await reader4.read(1024)
+        writer4.close()
+        await writer4.wait_closed()
+        assert b"400 Bad Request" in resp4, f"Expected 400 Bad Request, got: {resp4[:100]}"
+        await asyncio.sleep(0.1)
+        assert len(received_hooks) == 2, "VULNERABILITY: Malformed chunk size was accepted into captured_hooks!"
+
+        # E) Malformed trailing delimiter (missing/corrupted CRLF) MUST return 400 Bad Request
+        malformed_crlf_http = (
+            b"POST /bad-crlf HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9096\r\n"
+            b"Transfer-Encoding: chunked\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            b"5\r\n"
+            b"helloXXXX"
+            b"0\r\n\r\n"
+        )
+        reader5, writer5 = await asyncio.open_connection("127.0.0.1", 9096)
+        writer5.write(malformed_crlf_http)
+        await writer5.drain()
+        resp5 = await reader5.read(1024)
+        writer5.close()
+        await writer5.wait_closed()
+        assert b"400 Bad Request" in resp5, f"Expected 400 Bad Request, got: {resp5[:100]}"
+        await asyncio.sleep(0.1)
+        assert len(received_hooks) == 2, "VULNERABILITY: Malformed chunk delimiter was accepted into captured_hooks!"
+
+        # F) Premature EOF before terminal 0-size chunk MUST NOT record hook
+        premature_eof_http = (
+            b"POST /premature HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9096\r\n"
+            b"Transfer-Encoding: chunked\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            b"5\r\n"
+            b"hello\r\n"
+        )
+        reader6, writer6 = await asyncio.open_connection("127.0.0.1", 9096)
+        writer6.write(premature_eof_http)
+        await writer6.drain()
+        writer6.close()
+        await writer6.wait_closed()
+        await asyncio.sleep(0.1)
+        assert len(received_hooks) == 2, "VULNERABILITY: Incomplete chunked stream was accepted into captured_hooks!"
+
+        # G) Enforce max_chunks limit
+        ws_bounded = WebhookServer(port=9097, max_chunks=3, total_timeout=5.0)
+        await ws_bounded.start()
+        try:
+            excess_chunks_http = (
+                b"POST /excess HTTP/1.1\r\n"
+                b"Host: 127.0.0.1:9097\r\n"
+                b"Transfer-Encoding: chunked\r\n"
+                b"Connection: close\r\n"
+                b"\r\n"
+                b"1\r\na\r\n"
+                b"1\r\nb\r\n"
+                b"1\r\nc\r\n"
+                b"1\r\nd\r\n"
+                b"0\r\n\r\n"
+            )
+            reader_ex, writer_ex = await asyncio.open_connection("127.0.0.1", 9097)
+            writer_ex.write(excess_chunks_http)
+            await writer_ex.drain()
+            resp_ex = await reader_ex.read(1024)
+            writer_ex.close()
+            await writer_ex.wait_closed()
+            assert b"413 Payload Too Large" in resp_ex, f"Expected 413, got: {resp_ex[:100]}"
+            assert len(ws_bounded.captured_hooks) == 0
+        finally:
+            await ws_bounded.stop()
+
+        # H) Enforce total_timeout (absolute request deadline)
+        ws_timeout = WebhookServer(port=9094, total_timeout=0.3, read_timeout=2.0)
+        await ws_timeout.start()
+        try:
+            reader_to, writer_to = await asyncio.open_connection("127.0.0.1", 9094)
+            writer_to.write(b"POST /slowloris HTTP/1.1\r\nHost: 127.0.0.1:9094\r\n")
+            await writer_to.drain()
+            await asyncio.sleep(0.4)
+            resp_to = await reader_to.read(1024)
+            writer_to.close()
+            await writer_to.wait_closed()
+            assert b"408 Request Timeout" in resp_to or len(resp_to) == 0
+            assert len(ws_timeout.captured_hooks) == 0
+        finally:
+            await ws_timeout.stop()
+
     finally:
         await ws.stop()
 
@@ -328,7 +436,7 @@ async def test_tui_headers_and_gui_state():
 
 async def main():
     print("\n" + "=" * 60)
-    print("RUNNING GHOSTMAN AUDIT VULNERABILITY VERIFICATION (v0.1.5)")
+    print("RUNNING GHOSTMAN AUDIT VULNERABILITY VERIFICATION (v0.1.6)")
     print("=" * 60)
 
     await test_tls_verification_default_and_toggle()

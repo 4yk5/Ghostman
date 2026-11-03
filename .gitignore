@@ -12,6 +12,11 @@ __pycache__/
 venv/
 env/
 
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
 # Editor & OS files
 .vscode/
 .idea/

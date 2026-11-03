@@ -23,7 +23,7 @@ class NetworkEngine:
         headers = dict(headers) if headers else {}
         
         if not any(k.lower() == "user-agent" for k in headers):
-            headers["User-Agent"] = "Ghostman/0.1.5"
+            headers["User-Agent"] = "Ghostman/0.1.6"
 
         if body and not any(k.lower() == "content-type" for k in headers):
             try:

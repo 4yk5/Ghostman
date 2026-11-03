@@ -4,10 +4,19 @@ from datetime import datetime
 from typing import Callable, Optional
 
 class WebhookServer:
-    def __init__(self, host: str = "127.0.0.1", port: int = 9090, on_hook_received: Optional[Callable] = None):
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 9090,
+        on_hook_received: Optional[Callable] = None,
+        max_payload_size: int = 10 * 1024 * 1024,
+        read_timeout: float = 10.0
+    ):
         self.host = host
         self.port = port
         self.on_hook_received = on_hook_received
+        self.max_payload_size = max_payload_size
+        self.read_timeout = read_timeout
         self.server: Optional[asyncio.AbstractServer] = None
         self.is_running = False
         self.captured_hooks = []
@@ -27,7 +36,7 @@ class WebhookServer:
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         try:
-            line = await reader.readline()
+            line = await asyncio.wait_for(reader.readline(), timeout=self.read_timeout)
             if not line:
                 writer.close()
                 await writer.wait_closed()
@@ -42,7 +51,7 @@ class WebhookServer:
             content_length = 0
             transfer_encoding = ""
             while True:
-                header_line = await reader.readline()
+                header_line = await asyncio.wait_for(reader.readline(), timeout=self.read_timeout)
                 if not header_line or header_line in (b"\r\n", b"\n"):
                     break
                 decoded_header = header_line.decode("utf-8", errors="ignore").strip()
@@ -61,11 +70,12 @@ class WebhookServer:
                         transfer_encoding = v_clean.lower()
 
             body_bytes = b""
-            # Support Chunked Transfer Encoding (RFC 7230 / RFC 9112)
+            # Support Chunked Transfer Encoding (RFC 7230 / RFC 9112) with resource limits
             if "chunked" in transfer_encoding:
                 chunks = []
+                total_size = 0
                 while True:
-                    size_line = await reader.readline()
+                    size_line = await asyncio.wait_for(reader.readline(), timeout=self.read_timeout)
                     if not size_line:
                         break
                     # Strip any chunk extensions (e.g., "1a;ext=val")
@@ -79,19 +89,32 @@ class WebhookServer:
                     if chunk_size == 0:
                         # Consume trailer headers until empty CRLF line
                         while True:
-                            trailer = await reader.readline()
+                            trailer = await asyncio.wait_for(reader.readline(), timeout=self.read_timeout)
                             if not trailer or trailer in (b"\r\n", b"\n"):
                                 break
                         break
 
-                    chunk_data = await reader.readexactly(chunk_size)
-                    chunks.append(chunk_data)
+                    # Guard against memory exhaustion
+                    if total_size + chunk_size > self.max_payload_size:
+                        writer.write(b"HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n")
+                        await writer.drain()
+                        return
 
-                    # Consume trailing CRLF after chunk data
-                    await reader.readline()
+                    chunk_data = await asyncio.wait_for(reader.readexactly(chunk_size), timeout=self.read_timeout)
+                    chunks.append(chunk_data)
+                    total_size += chunk_size
+
+                    # Verify and consume trailing CRLF after chunk data
+                    crlf = await asyncio.wait_for(reader.readline(), timeout=self.read_timeout)
+                    if crlf not in (b"\r\n", b"\n"):
+                        break
                 body_bytes = b"".join(chunks)
             elif content_length > 0:
-                body_bytes = await reader.readexactly(content_length)
+                if content_length > self.max_payload_size:
+                    writer.write(b"HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n")
+                    await writer.drain()
+                    return
+                body_bytes = await asyncio.wait_for(reader.readexactly(content_length), timeout=self.read_timeout)
 
             body_str = body_bytes.decode("utf-8", errors="ignore")
             try:

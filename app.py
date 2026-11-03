@@ -255,6 +255,7 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
     BINDINGS = [
         Binding("ctrl+s", "send_request", "Send Request", priority=True),
         Binding("ctrl+w", "toggle_webhook", "Toggle Webhook Server", priority=True),
+        Binding("ctrl+t", "toggle_ssl", "Toggle TLS Verify", priority=True),
         Binding("ctrl+n", "new_request", "New Request", priority=True),
         Binding("ctrl+k", "save_request", "Save Request", priority=True),
         Binding("ctrl+q", "quit", "Quit", priority=True)
@@ -270,7 +271,8 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
 
     def __init__(self):
         super().__init__()
-        self.network = NetworkEngine()
+        self.verify_ssl: bool = True
+        self.network = NetworkEngine(verify_ssl=True)
         self.storage = StorageManager()
         self.collections = self.storage.load_collections()
         self.webhook_server = WebhookServer(
@@ -442,6 +444,14 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
         self.query_one("#url-input", Input).focus()
         self.notify("New request ready")
 
+    def action_toggle_ssl(self):
+        """Toggle SSL/TLS Certificate Verification (Ctrl+T)"""
+        self.verify_ssl = not self.verify_ssl
+        if self.verify_ssl:
+            self.notify("TLS Certificate Verification ENABLED (Secure)", timeout=3)
+        else:
+            self.notify("TLS Certificate Verification DISABLED (Insecure)", severity="warning", timeout=3)
+
     async def on_button_pressed(self, event: Button.Pressed):
         btn_id = event.button.id
         if btn_id == "send-btn":
@@ -525,12 +535,13 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
 
             req_body = body if method in ["POST", "PUT", "PATCH", "DELETE"] else None
 
-            # Execute with full headers
+            # Execute with full headers and TLS verification mode
             res = await self.network.execute_request(
                 method=method,
                 url=url,
                 headers=req_headers,
-                body=req_body
+                body=req_body,
+                verify_ssl=self.verify_ssl
             )
 
             if res["success"]:

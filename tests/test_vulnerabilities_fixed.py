@@ -379,7 +379,7 @@ async def test_chunked_transfer_encoding_webhook():
             resp_to = await reader_to.read(1024)
             writer_to.close()
             await writer_to.wait_closed()
-            assert b"408 Request Timeout" in resp_to or len(resp_to) == 0
+            assert b"408 Request Timeout" in resp_to, f"Expected 408 Request Timeout, got: {resp_to[:100]}"
             assert len(ws_timeout.captured_hooks) == 0
         finally:
             await ws_timeout.stop()
@@ -399,8 +399,11 @@ async def test_chunked_transfer_encoding_webhook():
         reader7, writer7 = await asyncio.open_connection("127.0.0.1", 9096)
         writer7.write(premature_trailer_eof)
         await writer7.drain()
+        writer7.write_eof()
+        resp7 = await reader7.read(1024)
         writer7.close()
         await writer7.wait_closed()
+        assert b"400 Bad Request" in resp7, f"Expected 400 Bad Request on premature trailer EOF, got: {resp7[:100]}"
         await asyncio.sleep(0.1)
         assert len(received_hooks) == 2, "VULNERABILITY: Unterminated trailer EOF was accepted into captured_hooks!"
 
@@ -468,6 +471,100 @@ async def test_chunked_transfer_encoding_webhook():
         await asyncio.sleep(0.1)
         assert len(received_hooks) == 2, "VULNERABILITY: Unsupported Transfer-Encoding was accepted into captured_hooks!"
 
+        # M) Multiple chunked encodings (RFC 9112 §6.1) MUST return 400 Bad Request
+        dup_chunked_http = (
+            b"POST /dup-chunked HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9096\r\n"
+            b"Transfer-Encoding: chunked, chunked\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            b"0\r\n\r\n"
+        )
+        reader_m, writer_m = await asyncio.open_connection("127.0.0.1", 9096)
+        writer_m.write(dup_chunked_http)
+        await writer_m.drain()
+        resp_m = await reader_m.read(1024)
+        writer_m.close()
+        await writer_m.wait_closed()
+        assert b"400 Bad Request" in resp_m, f"Expected 400 on duplicate chunked encoding, got: {resp_m[:100]}"
+        await asyncio.sleep(0.1)
+        assert len(received_hooks) == 2, "VULNERABILITY: Multiple chunked encoding was accepted into captured_hooks!"
+
+        # N) Content-Length: Non-digit (RFC 9110 §8.6) MUST return 400 Bad Request
+        cl_alpha_http = (
+            b"POST /cl-alpha HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9096\r\n"
+            b"Content-Length: abc\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+        )
+        reader_n, writer_n = await asyncio.open_connection("127.0.0.1", 9096)
+        writer_n.write(cl_alpha_http)
+        await writer_n.drain()
+        resp_n = await reader_n.read(1024)
+        writer_n.close()
+        await writer_n.wait_closed()
+        assert b"400 Bad Request" in resp_n, f"Expected 400 on non-digit Content-Length, got: {resp_n[:100]}"
+        await asyncio.sleep(0.1)
+        assert len(received_hooks) == 2, "VULNERABILITY: Non-digit Content-Length was accepted into captured_hooks!"
+
+        # O) Content-Length: Negative value MUST return 400 Bad Request
+        cl_neg_http = (
+            b"POST /cl-neg HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9096\r\n"
+            b"Content-Length: -10\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+        )
+        reader_o, writer_o = await asyncio.open_connection("127.0.0.1", 9096)
+        writer_o.write(cl_neg_http)
+        await writer_o.drain()
+        resp_o = await reader_o.read(1024)
+        writer_o.close()
+        await writer_o.wait_closed()
+        assert b"400 Bad Request" in resp_o, f"Expected 400 on negative Content-Length, got: {resp_o[:100]}"
+        await asyncio.sleep(0.1)
+        assert len(received_hooks) == 2, "VULNERABILITY: Negative Content-Length was accepted into captured_hooks!"
+
+        # P) Content-Length: Conflicting multiple values (RFC 9112 §6.3) MUST return 400 Bad Request
+        cl_conflict_http = (
+            b"POST /cl-conflict HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9096\r\n"
+            b"Content-Length: 10\r\n"
+            b"Content-Length: 20\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+        )
+        reader_p, writer_p = await asyncio.open_connection("127.0.0.1", 9096)
+        writer_p.write(cl_conflict_http)
+        await writer_p.drain()
+        resp_p = await reader_p.read(1024)
+        writer_p.close()
+        await writer_p.wait_closed()
+        assert b"400 Bad Request" in resp_p, f"Expected 400 on conflicting Content-Length, got: {resp_p[:100]}"
+        await asyncio.sleep(0.1)
+        assert len(received_hooks) == 2, "VULNERABILITY: Conflicting Content-Length values were accepted into captured_hooks!"
+
+        # Q) Content-Length: Identical multiple values (RFC 9112 §6.3) MUST be accepted as 200 OK
+        cl_identical_http = (
+            b"POST /cl-identical HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9096\r\n"
+            b"Content-Length: 5, 5\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            b"hello"
+        )
+        reader_q, writer_q = await asyncio.open_connection("127.0.0.1", 9096)
+        writer_q.write(cl_identical_http)
+        await writer_q.drain()
+        resp_q = await reader_q.read(1024)
+        writer_q.close()
+        await writer_q.wait_closed()
+        assert b"200 OK" in resp_q, f"Expected 200 OK on identical multiple Content-Length, got: {resp_q[:100]}"
+        await asyncio.sleep(0.1)
+        assert len(received_hooks) == 3, "WebhookServer did not capture valid identical Content-Length request!"
+        assert received_hooks[2]["raw_body"] == "hello"
+
     finally:
         await ws.stop()
 
@@ -515,12 +612,21 @@ async def test_tui_headers_and_gui_state():
         await pilot.pause(0.1)
         assert app.query_one("#headers-input", TextArea).text == ""
 
+        # Test TLS Toggle action via hotkey (Ctrl+T)
+        assert app.verify_ssl is True
+        await pilot.press("ctrl+t")
+        await pilot.pause(0.1)
+        assert app.verify_ssl is False
+        await pilot.press("ctrl+t")
+        await pilot.pause(0.1)
+        assert app.verify_ssl is True
+
     print("  [+] TUI Headers & GUI State: PASS")
 
 
 async def main():
     print("\n" + "=" * 60)
-    print("RUNNING GHOSTMAN AUDIT VULNERABILITY VERIFICATION (v0.1.7)")
+    print("RUNNING GHOSTMAN AUDIT VULNERABILITY VERIFICATION (v0.1.8)")
     print("=" * 60)
 
     await test_tls_verification_default_and_toggle()

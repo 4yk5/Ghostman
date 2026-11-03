@@ -20,21 +20,6 @@ Screen {
 #subtitle-label {
     color: #8b949e;
     margin-left: 2;
-    width: 1fr;
-}
-
-#ssl-badge {
-    color: #3fb950;
-    text-style: bold;
-    margin-right: 1;
-    padding: 0 1;
-    background: #161b22;
-    border: solid #238636;
-}
-
-#ssl-badge.insecure {
-    color: #f85149;
-    border: solid #da3633;
 }
 
 #main-container {
@@ -188,7 +173,8 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
 #tab-headers-pane {
     height: 1fr;
     background: #0d1117;
-    padding: 0;
+    border: solid #30363d;
+    padding: 1;
 }
 
 #tab-response-pane {

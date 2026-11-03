@@ -91,7 +91,7 @@ class WebhookServer:
 
         headers = {}
         content_length = 0
-        transfer_encoding = ""
+        transfer_encodings = []
         while True:
             try:
                 header_line = await asyncio.wait_for(reader.readline(), timeout=self.read_timeout)
@@ -114,11 +114,37 @@ class WebhookServer:
                     except ValueError:
                         content_length = 0
                 elif lower_k == "transfer-encoding":
-                    transfer_encoding = v_clean.lower()
+                    # Multiple transfer encodings can be comma-separated or repeated
+                    parts = [p.strip().lower() for p in v_clean.split(",") if p.strip()]
+                    transfer_encodings.extend(parts)
+
+        # Validate Transfer-Encoding (RFC 9112 §6.1, §6.3)
+        if transfer_encodings:
+            unsupported = [enc for enc in transfer_encodings if enc != "chunked"]
+            if unsupported:
+                # RFC 9112 §6.1: Server MUST respond with 501 (Not Implemented) for unsupported codings
+                await self._send_error_response(
+                    writer,
+                    b"501 Not Implemented",
+                    f"Unsupported transfer coding: {', '.join(unsupported)}"
+                )
+                return
+
+            if transfer_encodings[-1] != "chunked":
+                await self._send_error_response(
+                    writer,
+                    b"400 Bad Request",
+                    "Chunked transfer coding must be the final encoding"
+                )
+                return
+
+            is_chunked = True
+        else:
+            is_chunked = False
 
         body_bytes = b""
         # Support Chunked Transfer Encoding (RFC 7230 / RFC 9112) with resource limits
-        if "chunked" in transfer_encoding:
+        if is_chunked:
             # Memory bounded accumulation using bytearray instead of unbounded Python list of bytes objects
             body_buffer = bytearray()
             chunk_count = 0
@@ -145,6 +171,11 @@ class WebhookServer:
                     await self._send_error_response(writer, b"400 Bad Request", "Incomplete chunked stream before terminator")
                     return
 
+                # RFC 9112 §7.1: Chunk size line MUST end with CRLF
+                if not size_line.endswith(b"\r\n"):
+                    await self._send_error_response(writer, b"400 Bad Request", "Malformed chunk size delimiter (expected CRLF)")
+                    return
+
                 # Strip chunk extension if present (e.g., "1a;ext=val")
                 size_str = size_line.decode("utf-8", errors="ignore").split(";")[0].strip()
                 if not size_str:
@@ -162,16 +193,42 @@ class WebhookServer:
                     return
 
                 if chunk_size == 0:
+                    # RFC 9112 §7.1.2: trailer-section CRLF
                     # Consume trailer headers until empty CRLF line
                     while True:
                         try:
                             trailer = await asyncio.wait_for(reader.readline(), timeout=self.read_timeout)
-                        except (asyncio.TimeoutError, asyncio.IncompleteReadError):
+                        except asyncio.TimeoutError:
+                            await self._send_error_response(writer, b"408 Request Timeout", "Timeout reading trailer")
+                            return
+                        except asyncio.IncompleteReadError:
+                            await self._send_error_response(writer, b"400 Bad Request", "Incomplete trailer section")
+                            return
+
+                        if not trailer:
+                            # Unexpected EOF before terminating empty line
+                            await self._send_error_response(writer, b"400 Bad Request", "Premature EOF in trailer section")
+                            return
+
+                        if trailer == b"\r\n":
+                            # Clean RFC-compliant termination of chunked stream
+                            has_terminated = True
                             break
-                        if not trailer or trailer in (b"\r\n", b"\n"):
-                            break
-                    has_terminated = True
-                    break
+                        elif trailer == b"\n":
+                            # Disallow bare LF per RFC 9112
+                            await self._send_error_response(writer, b"400 Bad Request", "Malformed trailer delimiter (bare LF)")
+                            return
+                        else:
+                            # Trailer header line (must end with CRLF)
+                            if not trailer.endswith(b"\r\n"):
+                                await self._send_error_response(writer, b"400 Bad Request", "Malformed trailer line (missing CRLF)")
+                                return
+
+                    if has_terminated:
+                        break
+                    else:
+                        await self._send_error_response(writer, b"400 Bad Request", "Chunked stream did not terminate cleanly")
+                        return
 
                 # Guard against total payload size limit
                 if len(body_buffer) + chunk_size > self.max_payload_size:
@@ -190,14 +247,14 @@ class WebhookServer:
 
                 body_buffer.extend(chunk_data)
 
-                # Verify and consume trailing CRLF after chunk data
+                # Verify and consume trailing CRLF after chunk data (RFC 9112 §7.1: MUST be CRLF, not bare LF)
                 try:
                     crlf = await asyncio.wait_for(reader.readline(), timeout=self.read_timeout)
                 except (asyncio.IncompleteReadError, asyncio.TimeoutError):
                     await self._send_error_response(writer, b"400 Bad Request", "Missing chunk trailing CRLF")
                     return
 
-                if crlf not in (b"\r\n", b"\n"):
+                if crlf != b"\r\n":
                     await self._send_error_response(writer, b"400 Bad Request", "Malformed chunk trailing delimiter (expected CRLF)")
                     return
 

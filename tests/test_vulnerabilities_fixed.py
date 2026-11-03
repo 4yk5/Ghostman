@@ -384,6 +384,90 @@ async def test_chunked_transfer_encoding_webhook():
         finally:
             await ws_timeout.stop()
 
+        # I) Premature EOF after zero chunk (before final terminating CRLF)
+        premature_trailer_eof = (
+            b"POST /trailer-eof HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9096\r\n"
+            b"Transfer-Encoding: chunked\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            b"5\r\n"
+            b"hello\r\n"
+            b"0\r\n"
+            # Closed abruptly without the final terminating \r\n
+        )
+        reader7, writer7 = await asyncio.open_connection("127.0.0.1", 9096)
+        writer7.write(premature_trailer_eof)
+        await writer7.drain()
+        writer7.close()
+        await writer7.wait_closed()
+        await asyncio.sleep(0.1)
+        assert len(received_hooks) == 2, "VULNERABILITY: Unterminated trailer EOF was accepted into captured_hooks!"
+
+        # J) Trailer section timeout -> MUST respond 408 Request Timeout
+        ws_trailer = WebhookServer(port=9093, read_timeout=0.3, total_timeout=5.0)
+        await ws_trailer.start()
+        try:
+            reader_tr, writer_tr = await asyncio.open_connection("127.0.0.1", 9093)
+            writer_tr.write(
+                b"POST /trailer-to HTTP/1.1\r\n"
+                b"Host: 127.0.0.1:9093\r\n"
+                b"Transfer-Encoding: chunked\r\n"
+                b"Connection: close\r\n"
+                b"\r\n"
+                b"0\r\n"
+                # Stop sending, wait for trailer read_timeout to expire
+            )
+            await writer_tr.drain()
+            await asyncio.sleep(0.5)
+            resp_tr = await reader_tr.read(1024)
+            writer_tr.close()
+            await writer_tr.wait_closed()
+            assert b"408 Request Timeout" in resp_tr, f"Expected 408 on trailer timeout, got: {resp_tr[:100]}"
+            assert len(ws_trailer.captured_hooks) == 0
+        finally:
+            await ws_trailer.stop()
+
+        # K) Bare LF delimiter (not CRLF) MUST be rejected with 400 Bad Request
+        bare_lf_http = (
+            b"POST /bare-lf HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9096\r\n"
+            b"Transfer-Encoding: chunked\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            b"5\r\n"
+            b"hello\n"  # Bare LF instead of \r\n
+            b"0\r\n\r\n"
+        )
+        reader8, writer8 = await asyncio.open_connection("127.0.0.1", 9096)
+        writer8.write(bare_lf_http)
+        await writer8.drain()
+        resp8 = await reader8.read(1024)
+        writer8.close()
+        await writer8.wait_closed()
+        assert b"400 Bad Request" in resp8, f"Expected 400 for bare LF, got: {resp8[:100]}"
+        await asyncio.sleep(0.1)
+        assert len(received_hooks) == 2, "VULNERABILITY: Bare LF delimiter was accepted into captured_hooks!"
+
+        # L) Unsupported Transfer-Encoding (gzip, deflate) MUST return 501 Not Implemented
+        unsupported_te_http = (
+            b"POST /unsupported-te HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9096\r\n"
+            b"Transfer-Encoding: gzip, chunked\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            b"0\r\n\r\n"
+        )
+        reader9, writer9 = await asyncio.open_connection("127.0.0.1", 9096)
+        writer9.write(unsupported_te_http)
+        await writer9.drain()
+        resp9 = await reader9.read(1024)
+        writer9.close()
+        await writer9.wait_closed()
+        assert b"501 Not Implemented" in resp9, f"Expected 501 for unsupported Transfer-Encoding, got: {resp9[:100]}"
+        await asyncio.sleep(0.1)
+        assert len(received_hooks) == 2, "VULNERABILITY: Unsupported Transfer-Encoding was accepted into captured_hooks!"
+
     finally:
         await ws.stop()
 
@@ -436,7 +520,7 @@ async def test_tui_headers_and_gui_state():
 
 async def main():
     print("\n" + "=" * 60)
-    print("RUNNING GHOSTMAN AUDIT VULNERABILITY VERIFICATION (v0.1.6)")
+    print("RUNNING GHOSTMAN AUDIT VULNERABILITY VERIFICATION (v0.1.7)")
     print("=" * 60)
 
     await test_tls_verification_default_and_toggle()

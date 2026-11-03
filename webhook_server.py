@@ -90,7 +90,7 @@ class WebhookServer:
         path = parts[1] if len(parts) > 1 else "/"
 
         headers = {}
-        content_length = 0
+        content_length_values = []
         transfer_encodings = []
         while True:
             try:
@@ -109,14 +109,41 @@ class WebhookServer:
                 headers[k_clean] = v_clean
                 lower_k = k_clean.lower()
                 if lower_k == "content-length":
-                    try:
-                        content_length = int(v_clean)
-                    except ValueError:
-                        content_length = 0
+                    # Content-Length may be sent multiple times or comma-separated
+                    parts = [p.strip() for p in v_clean.split(",") if p.strip()]
+                    if not parts:
+                        await self._send_error_response(writer, b"400 Bad Request", "Empty Content-Length header")
+                        return
+                    content_length_values.extend(parts)
                 elif lower_k == "transfer-encoding":
                     # Multiple transfer encodings can be comma-separated or repeated
                     parts = [p.strip().lower() for p in v_clean.split(",") if p.strip()]
                     transfer_encodings.extend(parts)
+
+        # Validate Content-Length (RFC 9112 §6.3, RFC 9110 §8.6)
+        content_length = 0
+        if content_length_values:
+            for val_str in content_length_values:
+                # Content-Length must consist strictly of 1*DIGIT (no sign, letters, whitespace)
+                if not val_str.isdigit():
+                    await self._send_error_response(
+                        writer,
+                        b"400 Bad Request",
+                        f"Invalid Content-Length header value: {val_str}"
+                    )
+                    return
+
+            int_values = [int(v) for v in content_length_values]
+            # All values must be identical; conflicting lengths indicate framing error / smuggling
+            if len(set(int_values)) > 1:
+                await self._send_error_response(
+                    writer,
+                    b"400 Bad Request",
+                    "Conflicting multiple Content-Length values (RFC 9112 §6.3)"
+                )
+                return
+
+            content_length = int_values[0]
 
         # Validate Transfer-Encoding (RFC 9112 §6.1, §6.3)
         if transfer_encodings:
@@ -127,6 +154,15 @@ class WebhookServer:
                     writer,
                     b"501 Not Implemented",
                     f"Unsupported transfer coding: {', '.join(unsupported)}"
+                )
+                return
+
+            # RFC 9112 §6.1: chunked transfer coding MUST NOT be applied more than once
+            if transfer_encodings.count("chunked") > 1:
+                await self._send_error_response(
+                    writer,
+                    b"400 Bad Request",
+                    "Multiple chunked transfer codings are forbidden (RFC 9112 §6.1)"
                 )
                 return
 

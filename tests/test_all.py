@@ -84,6 +84,18 @@ async def run_tests():
         assert not app.webhook_server.is_running
     print("  [+] TUI Interactions: OK")
 
+    # Audit Vulnerability Verification Suites
+    from tests.test_vulnerabilities_fixed import (
+        test_tls_verification_default_and_toggle,
+        test_saved_and_custom_headers_propagation,
+        test_chunked_transfer_encoding_webhook,
+        test_tui_headers_and_ssl_controls,
+    )
+    await test_tls_verification_default_and_toggle()
+    await test_saved_and_custom_headers_propagation()
+    await test_chunked_transfer_encoding_webhook()
+    await test_tui_headers_and_ssl_controls()
+
     print("\nAll tests passed successfully.")
 
 if __name__ == "__main__":

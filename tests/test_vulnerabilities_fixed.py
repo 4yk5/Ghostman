@@ -187,36 +187,30 @@ async def test_chunked_transfer_encoding_webhook():
 
 
 async def test_tui_headers_and_ssl_controls():
-    print("[*] 4. Testing TUI Headers Tab & SSL Toggle Integration...")
+    print("[*] 4. Testing TUI Headers Tab & Integration...")
 
     app = GhostmanApp()
     async with app.run_test() as pilot:
-        # Check TLS badge initial state
-        ssl_badge = app.query_one("#ssl-badge", Label)
-        assert "[TLS: ON]" in str(ssl_badge.render())
-        assert app.verify_ssl is True
+        # Initial mount state: Tab Body is active and displayed, matching original clean GUI
+        assert app.query_one("#tab-body-pane").display is True
+        assert app.query_one("#tab-headers-pane").display is False
+        assert app.query_one("#tab-response-pane").display is False
+        assert app.network.verify_ssl is True
 
-        # Toggle TLS verify via hotkey (Ctrl+T)
-        await pilot.press("ctrl+t")
-        await pilot.pause(0.1)
-        assert app.verify_ssl is False
-        assert "[TLS: OFF]" in str(ssl_badge.render())
-
-        # Toggle back to secure
-        await pilot.press("ctrl+t")
-        await pilot.pause(0.1)
-        assert app.verify_ssl is True
-        assert "[TLS: ON]" in str(ssl_badge.render())
-
-        # Test Headers input in UI
-        headers_input = app.query_one("#headers-input", TextArea)
-        headers_input.text = "Authorization: Bearer my-ui-token\nX-Client: Ghostman"
+        # Header bar is clean with exact original title and subtitle
+        assert app.query_one("#title-label", Label) is not None
+        assert app.query_one("#subtitle-label", Label) is not None
 
         # Switch to Headers tab
         tabs = app.query_one("#tabs", Tabs)
         tabs.active = "tab-headers"
         await pilot.pause(0.1)
         assert app.query_one("#tab-headers-pane").display is True
+        assert app.query_one("#tab-body-pane").display is False
+
+        # Input headers into headers editor
+        headers_input = app.query_one("#headers-input", TextArea)
+        headers_input.text = "Authorization: Bearer my-ui-token\nX-Client: Ghostman"
 
         # Save current request with headers
         app.query_one("#url-input", Input).value = "https://httpbin.org/headers"
@@ -233,7 +227,7 @@ async def test_tui_headers_and_ssl_controls():
         await pilot.pause(0.1)
         assert app.query_one("#headers-input", TextArea).text == ""
 
-    print("  [+] TUI Headers & SSL Controls: PASS")
+    print("  [+] TUI Headers & GUI State: PASS")
 
 
 async def main():

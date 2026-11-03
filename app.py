@@ -37,21 +37,6 @@ Screen {
 #subtitle-label {
     color: #8b949e;
     margin-left: 2;
-    width: 1fr;
-}
-
-#ssl-badge {
-    color: #3fb950;
-    text-style: bold;
-    margin-right: 1;
-    padding: 0 1;
-    background: #161b22;
-    border: solid #238636;
-}
-
-#ssl-badge.insecure {
-    color: #f85149;
-    border: solid #da3633;
 }
 
 #main-container {
@@ -205,7 +190,8 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
 #tab-headers-pane {
     height: 1fr;
     background: #0d1117;
-    padding: 0;
+    border: solid #30363d;
+    padding: 1;
 }
 
 #tab-response-pane {
@@ -268,8 +254,7 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
 
     BINDINGS = [
         Binding("ctrl+s", "send_request", "Send Request", priority=True),
-        Binding("ctrl+w", "toggle_webhook", "Toggle Webhook", priority=True),
-        Binding("ctrl+t", "toggle_ssl", "Toggle TLS Verify", priority=True),
+        Binding("ctrl+w", "toggle_webhook", "Toggle Webhook Server", priority=True),
         Binding("ctrl+n", "new_request", "New Request", priority=True),
         Binding("ctrl+k", "save_request", "Save Request", priority=True),
         Binding("ctrl+q", "quit", "Quit", priority=True)
@@ -285,8 +270,7 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
 
     def __init__(self):
         super().__init__()
-        self.verify_ssl: bool = True
-        self.network = NetworkEngine(verify_ssl=True)
+        self.network = NetworkEngine()
         self.storage = StorageManager()
         self.collections = self.storage.load_collections()
         self.webhook_server = WebhookServer(
@@ -299,7 +283,6 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
         with Horizontal(id="header-bar"):
             yield Label("[GHOSTMAN]", id="title-label")
             yield Label("Terminal API & Webhook Studio (Local-First)", id="subtitle-label")
-            yield Label("[TLS: ON]", id="ssl-badge")
 
         with Horizontal(id="main-container"):
             with Vertical(id="sidebar"):
@@ -316,22 +299,18 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
                     yield Button("SAVE", id="save-btn")
 
                 yield Tabs(
-                    Tab("Headers", id="tab-headers"),
                     Tab("Body & Payload", id="tab-body"),
+                    Tab("Headers", id="tab-headers"),
                     Tab("Response", id="tab-response"),
                     Tab("Live Webhooks", id="tab-webhook"),
                     id="tabs"
                 )
 
-                with Vertical(id="tab-headers-pane"):
-                    yield TextArea(
-                        id="headers-input",
-                        language="yaml",
-                        text=""
-                    )
-
                 with Vertical(id="tab-body-pane"):
                     yield TextArea(id="body-input", language="json", text='{\n  "hello": "world"\n}')
+
+                with Vertical(id="tab-headers-pane"):
+                    yield TextArea(id="headers-input", language="yaml", text="")
 
                 with Vertical(id="tab-response-pane"):
                     yield Label("Status: Idle", id="metrics-bar")
@@ -443,8 +422,8 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
 
     def on_tabs_tab_activated(self, event: Tabs.TabActivated):
         tab_id = event.tab.id
-        self.query_one("#tab-headers-pane").display = (tab_id == "tab-headers")
         self.query_one("#tab-body-pane").display = (tab_id == "tab-body")
+        self.query_one("#tab-headers-pane").display = (tab_id == "tab-headers")
         self.query_one("#tab-response-pane").display = (tab_id == "tab-response")
         self.query_one("#tab-webhook-pane").display = (tab_id == "tab-webhook")
 
@@ -462,19 +441,6 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
         self.query_one("#tabs", Tabs).active = "tab-body"
         self.query_one("#url-input", Input).focus()
         self.notify("New request ready")
-
-    def action_toggle_ssl(self):
-        """Toggle SSL/TLS Certificate Verification (Ctrl+T)"""
-        self.verify_ssl = not self.verify_ssl
-        badge = self.query_one("#ssl-badge", Label)
-        if self.verify_ssl:
-            badge.update("[TLS: ON]")
-            badge.remove_class("insecure")
-            self.notify("TLS Certificate Verification ENABLED (Secure)", timeout=3)
-        else:
-            badge.update("[TLS: OFF]")
-            badge.add_class("insecure")
-            self.notify("TLS Certificate Verification DISABLED (Insecure)", severity="warning", timeout=3)
 
     async def on_button_pressed(self, event: Button.Pressed):
         btn_id = event.button.id
@@ -559,13 +525,12 @@ TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #heade
 
             req_body = body if method in ["POST", "PUT", "PATCH", "DELETE"] else None
 
-            # Execute with full headers and TLS verification mode
+            # Execute with full headers
             res = await self.network.execute_request(
                 method=method,
                 url=url,
                 headers=req_headers,
-                body=req_body,
-                verify_ssl=self.verify_ssl
+                body=req_body
             )
 
             if res["success"]:

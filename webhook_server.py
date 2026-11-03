@@ -40,6 +40,7 @@ class WebhookServer:
 
             headers = {}
             content_length = 0
+            transfer_encoding = ""
             while True:
                 header_line = await reader.readline()
                 if not header_line or header_line in (b"\r\n", b"\n"):
@@ -47,17 +48,49 @@ class WebhookServer:
                 decoded_header = header_line.decode("utf-8", errors="ignore").strip()
                 if ":" in decoded_header:
                     k, v = decoded_header.split(":", 1)
-                    k_clean = k.strip().title()
+                    k_clean = k.strip()
                     v_clean = v.strip()
                     headers[k_clean] = v_clean
-                    if k_clean.lower() == "content-length":
+                    lower_k = k_clean.lower()
+                    if lower_k == "content-length":
                         try:
                             content_length = int(v_clean)
                         except ValueError:
                             content_length = 0
+                    elif lower_k == "transfer-encoding":
+                        transfer_encoding = v_clean.lower()
 
             body_bytes = b""
-            if content_length > 0:
+            # Support Chunked Transfer Encoding (RFC 7230 / RFC 9112)
+            if "chunked" in transfer_encoding:
+                chunks = []
+                while True:
+                    size_line = await reader.readline()
+                    if not size_line:
+                        break
+                    # Strip any chunk extensions (e.g., "1a;ext=val")
+                    size_str = size_line.decode("utf-8", errors="ignore").split(";")[0].strip()
+                    if not size_str:
+                        continue
+                    try:
+                        chunk_size = int(size_str, 16)
+                    except ValueError:
+                        break
+                    if chunk_size == 0:
+                        # Consume trailer headers until empty CRLF line
+                        while True:
+                            trailer = await reader.readline()
+                            if not trailer or trailer in (b"\r\n", b"\n"):
+                                break
+                        break
+
+                    chunk_data = await reader.readexactly(chunk_size)
+                    chunks.append(chunk_data)
+
+                    # Consume trailing CRLF after chunk data
+                    await reader.readline()
+                body_bytes = b"".join(chunks)
+            elif content_length > 0:
                 body_bytes = await reader.readexactly(content_length)
 
             body_str = body_bytes.decode("utf-8", errors="ignore")

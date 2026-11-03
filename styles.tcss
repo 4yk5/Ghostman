@@ -20,6 +20,21 @@ Screen {
 #subtitle-label {
     color: #8b949e;
     margin-left: 2;
+    width: 1fr;
+}
+
+#ssl-badge {
+    color: #3fb950;
+    text-style: bold;
+    margin-right: 1;
+    padding: 0 1;
+    background: #161b22;
+    border: solid #238636;
+}
+
+#ssl-badge.insecure {
+    color: #f85149;
+    border: solid #da3633;
 }
 
 #main-container {
@@ -163,11 +178,17 @@ Input:focus, #url-input:focus {
     margin-bottom: 1;
 }
 
-TextArea, TextArea:focus, #body-input, #body-input:focus {
+TextArea, TextArea:focus, #body-input, #body-input:focus, #headers-input, #headers-input:focus {
     height: 1fr;
     background: #161b22;
     border: solid #30363d !important;
     color: #79c0ff;
+}
+
+#tab-headers-pane {
+    height: 1fr;
+    background: #0d1117;
+    padding: 0;
 }
 
 #tab-response-pane {

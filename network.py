@@ -1,5 +1,6 @@
 import time
 import json
+import ssl
 from typing import Optional, Union
 import httpx
 
@@ -22,7 +23,7 @@ class NetworkEngine:
         headers = dict(headers) if headers else {}
         
         if not any(k.lower() == "user-agent" for k in headers):
-            headers["User-Agent"] = "Ghostman/0.1.3"
+            headers["User-Agent"] = "Ghostman/0.1.5"
 
         if body and not any(k.lower() == "content-type" for k in headers):
             try:
@@ -35,12 +36,15 @@ class NetworkEngine:
                     headers["Content-Type"] = "text/plain"
 
         # Determine SSL verification mode (defaults to True for MITM protection)
-        if ca_bundle:
-            verify_target: Union[bool, str] = ca_bundle
+        active_ca = ca_bundle or self.ca_bundle
+        if active_ca:
+            try:
+                # Use ssl.create_default_context for HTTPX 0.28+ deprecation compliance
+                verify_target: Union[bool, ssl.SSLContext] = ssl.create_default_context(cafile=active_ca)
+            except Exception:
+                verify_target = active_ca
         elif verify_ssl is not None:
             verify_target = verify_ssl
-        elif self.ca_bundle:
-            verify_target = self.ca_bundle
         else:
             verify_target = self.verify_ssl
 

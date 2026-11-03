@@ -29,11 +29,21 @@ async def run_tests():
 
     # Network engine
     net = NetworkEngine()
-    r = await net.execute_request("GET", "https://jsonplaceholder.typicode.com/posts/1")
-    assert r["success"] and r["status_code"] == 200, "Network GET failed"
+    r = None
+    for _ in range(3):
+        r = await net.execute_request("GET", "https://jsonplaceholder.typicode.com/posts/1")
+        if r["success"]:
+            break
+        await asyncio.sleep(0.5)
+    assert r and r["success"] and r["status_code"] == 200, f"Network GET failed: {r.get('error') if r else 'no response'}"
     
-    r_post = await net.execute_request("POST", "https://jsonplaceholder.typicode.com/posts", body='{"test": 1}')
-    assert r_post["success"], "Network POST failed"
+    r_post = None
+    for _ in range(3):
+        r_post = await net.execute_request("POST", "https://jsonplaceholder.typicode.com/posts", body='{"test": 1}')
+        if r_post["success"]:
+            break
+        await asyncio.sleep(0.5)
+    assert r_post and r_post["success"], "Network POST failed"
 
     r_fail = await net.execute_request("GET", "invalid-target")
     assert not r_fail["success"], "Error handling check failed"

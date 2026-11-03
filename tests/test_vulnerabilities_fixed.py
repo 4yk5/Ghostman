@@ -399,7 +399,8 @@ async def test_chunked_transfer_encoding_webhook():
         reader7, writer7 = await asyncio.open_connection("127.0.0.1", 9096)
         writer7.write(premature_trailer_eof)
         await writer7.drain()
-        writer7.write_eof()
+        if writer7.can_write_eof():
+            writer7.write_eof()
         resp7 = await reader7.read(1024)
         writer7.close()
         await writer7.wait_closed()

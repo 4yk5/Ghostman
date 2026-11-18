@@ -19,6 +19,8 @@ class WebhookServer:
         self.on_hook_received = on_hook_received
         self.max_payload_size = max_payload_size
         self.max_chunks = max_chunks
+        self.max_captured = 500
+        self.max_headers = 100
         self.read_timeout = read_timeout
         self.total_timeout = total_timeout
         self.server: Optional[asyncio.AbstractServer] = None
@@ -40,7 +42,7 @@ class WebhookServer:
 
     async def _send_error_response(self, writer: asyncio.StreamWriter, status_line: bytes, message: str = ""):
         try:
-            body = f'{{"error":"{message}"}}'.encode("utf-8") if message else b""
+            body = json.dumps({"error": message}).encode("utf-8") if message else b""
             content_len = len(body)
             resp = (
                 b"HTTP/1.1 " + status_line + b"\r\n"
@@ -92,6 +94,7 @@ class WebhookServer:
         headers = {}
         content_length_values = []
         transfer_encodings = []
+        header_count = 0
         while True:
             try:
                 header_line = await asyncio.wait_for(reader.readline(), timeout=self.read_timeout)
@@ -101,6 +104,10 @@ class WebhookServer:
 
             if not header_line or header_line in (b"\r\n", b"\n"):
                 break
+            header_count += 1
+            if header_count > self.max_headers:
+                await self._send_error_response(writer, b"431 Request Header Fields Too Large", "Too many headers")
+                return
             decoded_header = header_line.decode("utf-8", errors="ignore").strip()
             if ":" in decoded_header:
                 k, v = decoded_header.split(":", 1)
@@ -177,6 +184,15 @@ class WebhookServer:
             is_chunked = True
         else:
             is_chunked = False
+
+        # RFC 9112 §6.3: Transfer-Encoding and Content-Length MUST NOT coexist
+        if transfer_encodings and content_length_values:
+            await self._send_error_response(
+                writer,
+                b"400 Bad Request",
+                "Request contains both Transfer-Encoding and Content-Length (RFC 9112 §6.3)"
+            )
+            return
 
         body_bytes = b""
         # Support Chunked Transfer Encoding (RFC 7230 / RFC 9112) with resource limits
@@ -329,9 +345,17 @@ class WebhookServer:
             "body": formatted_body,
             "raw_body": body_str
         }
+        if len(self.captured_hooks) >= self.max_captured:
+            self.captured_hooks = self.captured_hooks[-(self.max_captured // 2):]
         self.captured_hooks.append(hook_entry)
 
-        response = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\",\"source\":\"ghostman\"}"
+        resp_body = b'{"status":"ok","source":"ghostman"}'
+        response = (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: " + str(len(resp_body)).encode("ascii") + b"\r\n"
+            b"Connection: close\r\n\r\n" + resp_body
+        )
         writer.write(response)
         await writer.drain()
 

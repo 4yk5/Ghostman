@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Optional
 import json
 
 try:
@@ -38,7 +39,7 @@ DEFAULT_COLLECTIONS = [
 ]
 
 class StorageManager:
-    def __init__(self, workspace_path: str = None):
+    def __init__(self, workspace_path: Optional[str] = None):
         self.workspace_dir = Path(workspace_path or os.getcwd()) / ".ghostman"
         self.yaml_file = self.workspace_dir / "collections.yaml"
         self.json_file = self.workspace_dir / "collections.json"
@@ -76,7 +77,7 @@ class StorageManager:
             with open(self.json_file, "w", encoding="utf-8") as f:
                 json.dump(collections, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            pass
+            raise RuntimeError(f"Failed to save collections to {self.json_file}: {e}") from e
 
         if HAS_YAML:
             try:

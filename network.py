@@ -30,7 +30,8 @@ class NetworkEngine:
                 json.loads(body)
                 headers["Content-Type"] = "application/json"
             except Exception:
-                if body.strip().startswith("<") and body.strip().endswith(">"):
+                stripped = body.strip()
+                if stripped.startswith("<?xml") or stripped.startswith("<soap:"):
                     headers["Content-Type"] = "application/xml"
                 else:
                     headers["Content-Type"] = "text/plain"

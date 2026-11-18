@@ -15,7 +15,7 @@ try:
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.hazmat.primitives import serialization
 except ImportError:
-    print("[!] Error: 'cryptography' is required to run test_vulnerabilities_fixed.py.")
+    print("[!] Error: 'cryptography' is required to run test_security.py.")
     print("    Install test dependencies with: pip install -e .[dev]")
     sys.exit(1)
 
@@ -93,11 +93,11 @@ async def test_tls_verification_default_and_toggle():
 
     try:
         net = NetworkEngine()
-        assert net.verify_ssl is True, "VULNERABILITY: NetworkEngine did not default to verify_ssl=True!"
+        assert net.verify_ssl is True, "NetworkEngine should default to verify_ssl=True"
 
         # A) Standard request with verify_ssl=True MUST fail because self-signed cert is untrusted
         res = await net.execute_request("GET", "https://127.0.0.1:9099/")
-        assert res["success"] is False, "VULNERABILITY: Self-signed certificate was accepted under verify_ssl=True!"
+        assert res["success"] is False, "Self-signed cert should be rejected when verify_ssl=True"
         error_text = (str(res.get("error", "")) + " " + str(res.get("body", ""))).lower()
         assert (
             "certificate_verify_failed" in error_text or
@@ -160,13 +160,13 @@ async def test_saved_and_custom_headers_propagation():
         lower_headers = {k.lower(): v for k, v in captured_headers.items()}
 
         assert lower_headers.get("authorization") == "Bearer gh_secret_token_12345", (
-            "VULNERABILITY: Authorization header was not sent!"
+            "Authorization header was not forwarded"
         )
         assert lower_headers.get("x-custom-trace-id") == "trace-uuid-abcdef", (
-            "VULNERABILITY: X-Custom-Trace-Id header was not sent!"
+            "X-Custom-Trace-Id header was not forwarded"
         )
         assert lower_headers.get("accept") == "application/vnd.github.v3+json", (
-            "VULNERABILITY: Accept header was not sent!"
+            "Accept header was not forwarded"
         )
 
         header_text = "Authorization: Bearer secret\nContent-Type: application/xml\nUser-Agent: Custom"
@@ -232,7 +232,7 @@ async def test_chunked_transfer_encoding_webhook():
         await asyncio.sleep(0.15)
         assert len(received_hooks) == 1, "WebhookServer did not capture chunked request!"
         assert received_hooks[0]["raw_body"] == "MozillaDeveloperNetwork", (
-            f"VULNERABILITY: Chunked payload was not properly reconstructed! Got: {received_hooks[0]['raw_body']}"
+            f"Chunked payload mismatch, got: {received_hooks[0]['raw_body']}"
         )
 
         # B) Chunked JSON with Chunk Extensions
@@ -262,7 +262,7 @@ async def test_chunked_transfer_encoding_webhook():
         await asyncio.sleep(0.15)
         assert len(received_hooks) == 2, "WebhookServer did not capture second chunked request!"
         assert json.loads(received_hooks[1]["raw_body"]) == {"event": "deploy"}, (
-            f"VULNERABILITY: Chunked JSON payload failed! Got: {received_hooks[1]['raw_body']}"
+            f"Chunked JSON payload mismatch, got: {received_hooks[1]['raw_body']}"
         )
 
         # C) Payload exceeding max_payload_size must receive 413 Payload Too Large
@@ -300,7 +300,7 @@ async def test_chunked_transfer_encoding_webhook():
         await writer4.wait_closed()
         assert b"400 Bad Request" in resp4, f"Expected 400 Bad Request, got: {resp4[:100]}"
         await asyncio.sleep(0.1)
-        assert len(received_hooks) == 2, "VULNERABILITY: Malformed chunk size was accepted into captured_hooks!"
+        assert len(received_hooks) == 2, "Malformed chunk size should not be recorded"
 
         # E) Malformed trailing delimiter (missing/corrupted CRLF) MUST return 400 Bad Request
         malformed_crlf_http = (
@@ -321,7 +321,7 @@ async def test_chunked_transfer_encoding_webhook():
         await writer5.wait_closed()
         assert b"400 Bad Request" in resp5, f"Expected 400 Bad Request, got: {resp5[:100]}"
         await asyncio.sleep(0.1)
-        assert len(received_hooks) == 2, "VULNERABILITY: Malformed chunk delimiter was accepted into captured_hooks!"
+        assert len(received_hooks) == 2, "Malformed chunk delimiter should not be recorded"
 
         # F) Premature EOF before terminal 0-size chunk MUST NOT record hook
         premature_eof_http = (
@@ -339,7 +339,7 @@ async def test_chunked_transfer_encoding_webhook():
         writer6.close()
         await writer6.wait_closed()
         await asyncio.sleep(0.1)
-        assert len(received_hooks) == 2, "VULNERABILITY: Incomplete chunked stream was accepted into captured_hooks!"
+        assert len(received_hooks) == 2, "Incomplete chunked stream should not be recorded"
 
         # G) Enforce max_chunks limit
         ws_bounded = WebhookServer(port=9097, max_chunks=3, total_timeout=5.0)
@@ -406,7 +406,7 @@ async def test_chunked_transfer_encoding_webhook():
         await writer7.wait_closed()
         assert b"400 Bad Request" in resp7, f"Expected 400 Bad Request on premature trailer EOF, got: {resp7[:100]}"
         await asyncio.sleep(0.1)
-        assert len(received_hooks) == 2, "VULNERABILITY: Unterminated trailer EOF was accepted into captured_hooks!"
+        assert len(received_hooks) == 2, "Unterminated trailer EOF should not be recorded"
 
         # J) Trailer section timeout -> MUST respond 408 Request Timeout
         ws_trailer = WebhookServer(port=9093, read_timeout=0.3, total_timeout=5.0)
@@ -451,7 +451,7 @@ async def test_chunked_transfer_encoding_webhook():
         await writer8.wait_closed()
         assert b"400 Bad Request" in resp8, f"Expected 400 for bare LF, got: {resp8[:100]}"
         await asyncio.sleep(0.1)
-        assert len(received_hooks) == 2, "VULNERABILITY: Bare LF delimiter was accepted into captured_hooks!"
+        assert len(received_hooks) == 2, "Bare LF delimiter should not be recorded"
 
         # L) Unsupported Transfer-Encoding (gzip, deflate) MUST return 501 Not Implemented
         unsupported_te_http = (
@@ -470,7 +470,7 @@ async def test_chunked_transfer_encoding_webhook():
         await writer9.wait_closed()
         assert b"501 Not Implemented" in resp9, f"Expected 501 for unsupported Transfer-Encoding, got: {resp9[:100]}"
         await asyncio.sleep(0.1)
-        assert len(received_hooks) == 2, "VULNERABILITY: Unsupported Transfer-Encoding was accepted into captured_hooks!"
+        assert len(received_hooks) == 2, "Unsupported Transfer-Encoding should not be recorded"
 
         # M) Multiple chunked encodings (RFC 9112 §6.1) MUST return 400 Bad Request
         dup_chunked_http = (
@@ -489,7 +489,7 @@ async def test_chunked_transfer_encoding_webhook():
         await writer_m.wait_closed()
         assert b"400 Bad Request" in resp_m, f"Expected 400 on duplicate chunked encoding, got: {resp_m[:100]}"
         await asyncio.sleep(0.1)
-        assert len(received_hooks) == 2, "VULNERABILITY: Multiple chunked encoding was accepted into captured_hooks!"
+        assert len(received_hooks) == 2, "Duplicate chunked encoding should not be recorded"
 
         # N) Content-Length: Non-digit (RFC 9110 §8.6) MUST return 400 Bad Request
         cl_alpha_http = (
@@ -507,7 +507,7 @@ async def test_chunked_transfer_encoding_webhook():
         await writer_n.wait_closed()
         assert b"400 Bad Request" in resp_n, f"Expected 400 on non-digit Content-Length, got: {resp_n[:100]}"
         await asyncio.sleep(0.1)
-        assert len(received_hooks) == 2, "VULNERABILITY: Non-digit Content-Length was accepted into captured_hooks!"
+        assert len(received_hooks) == 2, "Non-digit Content-Length should not be recorded"
 
         # O) Content-Length: Negative value MUST return 400 Bad Request
         cl_neg_http = (
@@ -525,7 +525,7 @@ async def test_chunked_transfer_encoding_webhook():
         await writer_o.wait_closed()
         assert b"400 Bad Request" in resp_o, f"Expected 400 on negative Content-Length, got: {resp_o[:100]}"
         await asyncio.sleep(0.1)
-        assert len(received_hooks) == 2, "VULNERABILITY: Negative Content-Length was accepted into captured_hooks!"
+        assert len(received_hooks) == 2, "Negative Content-Length should not be recorded"
 
         # P) Content-Length: Conflicting multiple values (RFC 9112 §6.3) MUST return 400 Bad Request
         cl_conflict_http = (
@@ -544,7 +544,7 @@ async def test_chunked_transfer_encoding_webhook():
         await writer_p.wait_closed()
         assert b"400 Bad Request" in resp_p, f"Expected 400 on conflicting Content-Length, got: {resp_p[:100]}"
         await asyncio.sleep(0.1)
-        assert len(received_hooks) == 2, "VULNERABILITY: Conflicting Content-Length values were accepted into captured_hooks!"
+        assert len(received_hooks) == 2, "Conflicting Content-Length values should not be recorded"
 
         # Q) Content-Length: Identical multiple values (RFC 9112 §6.3) MUST be accepted as 200 OK
         cl_identical_http = (
@@ -627,7 +627,7 @@ async def test_tui_headers_and_gui_state():
 
 async def main():
     print("\n" + "=" * 60)
-    print("RUNNING GHOSTMAN AUDIT VULNERABILITY VERIFICATION (v0.1.8)")
+    print("Ghostman Security Tests (v0.1.9)")
     print("=" * 60)
 
     await test_tls_verification_default_and_toggle()
@@ -636,7 +636,7 @@ async def main():
     await test_tui_headers_and_gui_state()
 
     print("\n" + "=" * 60)
-    print("ALL AUDIT ISSUES RESOLVED AND VERIFIED 100% PASSING!")
+    print("All security tests passed.")
     print("=" * 60 + "\n")
 
 

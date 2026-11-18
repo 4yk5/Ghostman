@@ -38,11 +38,25 @@ DEFAULT_COLLECTIONS = [
     }
 ]
 
+DEFAULT_ENVIRONMENTS = {
+    "active": "Default",
+    "environments": [
+        {
+            "name": "Default",
+            "variables": {
+                "base_url": "https://jsonplaceholder.typicode.com"
+            }
+        }
+    ]
+}
+
+
 class StorageManager:
     def __init__(self, workspace_path: Optional[str] = None):
         self.workspace_dir = Path(workspace_path or os.getcwd()) / ".ghostman"
         self.yaml_file = self.workspace_dir / "collections.yaml"
         self.json_file = self.workspace_dir / "collections.json"
+        self.env_file = self.workspace_dir / "environments.json"
         self._init_storage()
 
     def _init_storage(self):
@@ -85,3 +99,21 @@ class StorageManager:
                     yaml.dump(collections, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
             except Exception:
                 pass
+
+    def load_environments(self):
+        if self.env_file.exists():
+            try:
+                with open(self.env_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and "environments" in data:
+                        return data
+            except Exception:
+                pass
+        return json.loads(json.dumps(DEFAULT_ENVIRONMENTS))
+
+    def save_environments(self, env_data: dict):
+        try:
+            with open(self.env_file, "w", encoding="utf-8") as f:
+                json.dump(env_data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            raise RuntimeError(f"Failed to save environments to {self.env_file}: {e}") from e

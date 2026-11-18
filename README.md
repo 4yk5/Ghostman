@@ -105,6 +105,7 @@ python main.py
 | `Ctrl + N` | **New Request** (Resets input fields) |
 | `Ctrl + W` | **Toggle Webhook Server** (Starts / Stops listener on port 9090) |
 | `Ctrl + T` | **Toggle TLS Verify** (Enable / Disable SSL certificate verification) |
+| `Ctrl + E` | **Switch Environment** (Cycle through saved environments) |
 | `Tab` / `Shift + Tab` | Navigate between inputs, method selector, and tabs |
 | `Enter` | Select endpoint from sidebar / trigger button |
 | `Ctrl + Q` | **Quit Ghostman** |

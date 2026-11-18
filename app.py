@@ -10,6 +10,8 @@ from webhook_server import WebhookServer
 from storage import StorageManager
 
 import json
+import re
+
 
 class GhostmanApp(App):
     CSS_PATH = "styles.tcss"
@@ -21,6 +23,7 @@ class GhostmanApp(App):
         Binding("ctrl+t", "toggle_ssl", "Toggle TLS Verify", priority=True),
         Binding("ctrl+n", "new_request", "New Request", priority=True),
         Binding("ctrl+k", "save_request", "Save Request", priority=True),
+        Binding("ctrl+e", "cycle_env", "Switch Env", priority=True),
         Binding("ctrl+q", "quit", "Quit", priority=True)
     ]
 
@@ -38,6 +41,20 @@ class GhostmanApp(App):
         self.network = NetworkEngine(verify_ssl=True)
         self.storage = StorageManager()
         self.collections = self.storage.load_collections()
+
+        self.env_data = self.storage.load_environments()
+        self._active_env = self.env_data.get("active", "Default")
+        env_names = [e["name"] for e in self.env_data.get("environments", [])]
+        if not env_names:
+            self.env_data["environments"] = [{"name": "Default", "variables": {}}]
+            self._active_env = "Default"
+            self.env_data["active"] = "Default"
+        elif self._active_env not in env_names:
+            self._active_env = env_names[0]
+            self.env_data["active"] = self._active_env
+        self._env_options = [(e["name"], e["name"]) for e in self.env_data["environments"]]
+        self._env_switching = False
+
         self.webhook_server = WebhookServer(
             host="127.0.0.1",
             port=9090,
@@ -48,6 +65,7 @@ class GhostmanApp(App):
         with Horizontal(id="header-bar"):
             yield Label("[GHOSTMAN]", id="title-label")
             yield Label("Terminal API & Webhook Studio (Local-First)", id="subtitle-label")
+            yield Label(f"[ENV: {self._active_env}]", id="env-indicator")
 
         with Horizontal(id="main-container"):
             with Vertical(id="sidebar"):
@@ -59,7 +77,7 @@ class GhostmanApp(App):
             with Vertical(id="content-area"):
                 with Horizontal(id="request-bar"):
                     yield Select(self.METHODS, value="GET", allow_blank=False, id="method-select")
-                    yield Input(placeholder="Request URL (e.g. https://api.github.com)...", id="url-input")
+                    yield Input(placeholder="URL (supports {{env_var}} syntax)...", id="url-input")
                     yield Button("SEND", id="send-btn")
                     yield Button("SAVE", id="save-btn")
 
@@ -68,6 +86,7 @@ class GhostmanApp(App):
                     Tab("Headers", id="tab-headers"),
                     Tab("Response", id="tab-response"),
                     Tab("Live Webhooks", id="tab-webhook"),
+                    Tab("Environments", id="tab-env"),
                     id="tabs"
                 )
 
@@ -88,6 +107,16 @@ class GhostmanApp(App):
                     yield Label("Send requests to http://127.0.0.1:9090 to inspect payloads live:")
                     yield ListView(id="webhook-list")
 
+                with Vertical(id="tab-env-pane"):
+                    with Horizontal(id="env-bar"):
+                        yield Select(self._env_options, value=self._active_env, allow_blank=False, id="env-select")
+                        yield Input(placeholder="Environment name...", value=self._active_env, id="env-name-input")
+                        yield Button("+ NEW", id="env-new-btn")
+                        yield Button("DEL", id="env-del-btn")
+                        yield Button("SAVE", id="env-save-btn")
+                    yield Label("Define variables below (KEY = VALUE per line). Use {{KEY}} in URLs, headers, and body.", id="env-hint")
+                    yield TextArea(id="env-editor", language="yaml", text="")
+
         yield Footer()
 
     async def on_mount(self):
@@ -95,7 +124,9 @@ class GhostmanApp(App):
         self.query_one("#tab-headers-pane").display = False
         self.query_one("#tab-response-pane").display = False
         self.query_one("#tab-webhook-pane").display = False
+        self.query_one("#tab-env-pane").display = False
         self.query_one("#url-input").value = "https://jsonplaceholder.typicode.com/posts/1"
+        self._load_env_into_editor(self._active_env)
 
     async def on_unmount(self):
         try:
@@ -134,6 +165,152 @@ class GhostmanApp(App):
             return ""
         return "\n".join(f"{k}: {v}" for k, v in headers.items())
 
+    @staticmethod
+    def substitute_variables(text: str, variables: dict) -> str:
+        """Replace {{key}} placeholders with values from the given variable map."""
+        if not text or not variables:
+            return text or ""
+        def replacer(match):
+            key = match.group(1).strip()
+            return variables.get(key, match.group(0))
+        return re.sub(r'\{\{(.+?)\}\}', replacer, text)
+
+    @staticmethod
+    def _parse_env_text(text: str) -> dict:
+        variables = {}
+        if not text:
+            return variables
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                k, v = line.split("=", 1)
+                k = k.strip()
+                if k:
+                    variables[k] = v.strip()
+        return variables
+
+    @staticmethod
+    def _format_env_text(variables: dict) -> str:
+        if not variables:
+            return ""
+        return "\n".join(f"{k} = {v}" for k, v in variables.items())
+
+    def _get_active_variables(self) -> dict:
+        for env in self.env_data.get("environments", []):
+            if env["name"] == self._active_env:
+                return dict(env.get("variables", {}))
+        return {}
+
+    def _update_env_indicator(self):
+        try:
+            self.query_one("#env-indicator", Label).update(f"[ENV: {self._active_env}]")
+        except Exception:
+            pass
+
+    def _load_env_into_editor(self, env_name: str):
+        for env in self.env_data.get("environments", []):
+            if env["name"] == env_name:
+                try:
+                    self.query_one("#env-name-input", Input).value = env["name"]
+                    self.query_one("#env-editor", TextArea).text = self._format_env_text(env.get("variables", {}))
+                except Exception:
+                    pass
+                self._active_env = env_name
+                self.env_data["active"] = env_name
+                self._update_env_indicator()
+                return
+
+    def _auto_save_env_variables(self):
+        try:
+            variables = self._parse_env_text(self.query_one("#env-editor", TextArea).text)
+            for env in self.env_data.get("environments", []):
+                if env["name"] == self._active_env:
+                    env["variables"] = variables
+                    break
+            self.storage.save_environments(self.env_data)
+        except Exception:
+            pass
+
+    def _save_current_env(self):
+        try:
+            select = self.query_one("#env-select", Select)
+            if select.value == Select.BLANK:
+                return
+            old_name = str(select.value)
+            new_name = self.query_one("#env-name-input", Input).value.strip()
+            if not new_name:
+                new_name = old_name
+
+            if new_name != old_name:
+                existing = {e["name"] for e in self.env_data.get("environments", []) if e["name"] != old_name}
+                if new_name in existing:
+                    self.notify(f"Environment '{new_name}' already exists", severity="warning")
+                    return
+
+            variables = self._parse_env_text(self.query_one("#env-editor", TextArea).text)
+
+            for env in self.env_data.get("environments", []):
+                if env["name"] == old_name:
+                    env["name"] = new_name
+                    env["variables"] = variables
+                    break
+
+            self._active_env = new_name
+            self.env_data["active"] = new_name
+            self.storage.save_environments(self.env_data)
+            self._env_switching = True
+            self._refresh_env_selector()
+            self._env_switching = False
+            self._update_env_indicator()
+        except Exception as e:
+            self._env_switching = False
+            self.notify(f"Error saving environment: {e}", severity="error")
+
+    def _refresh_env_selector(self):
+        try:
+            options = [(e["name"], e["name"]) for e in self.env_data.get("environments", [])]
+            select = self.query_one("#env-select", Select)
+            self._env_switching = True
+            select.set_options(options)
+            if self._active_env:
+                select.value = self._active_env
+            self._env_switching = False
+        except Exception:
+            self._env_switching = False
+
+    def _create_new_env(self):
+        envs = self.env_data.get("environments", [])
+        existing = {e["name"] for e in envs}
+        name = "New Environment"
+        counter = 1
+        while name in existing:
+            counter += 1
+            name = f"New Environment {counter}"
+
+        envs.append({"name": name, "variables": {}})
+        self._active_env = name
+        self.env_data["active"] = name
+        self.storage.save_environments(self.env_data)
+        self._refresh_env_selector()
+        self._load_env_into_editor(name)
+        self.notify(f"Created: {name}", timeout=2)
+
+    def _delete_current_env(self):
+        envs = self.env_data.get("environments", [])
+        if len(envs) <= 1:
+            self.notify("Cannot delete the last environment", severity="warning")
+            return
+        deleted = self._active_env
+        envs[:] = [e for e in envs if e["name"] != self._active_env]
+        self._active_env = envs[0]["name"]
+        self.env_data["active"] = self._active_env
+        self.storage.save_environments(self.env_data)
+        self._refresh_env_selector()
+        self._load_env_into_editor(self._active_env)
+        self.notify(f"Deleted: {deleted}", timeout=2)
+
     def populate_sidebar(self):
         try:
             list_view = self.query_one("#requests-list", ListView)
@@ -165,11 +342,8 @@ class GhostmanApp(App):
                 self.query_one("#method-select", Select).value = method
             self.query_one("#url-input", Input).value = req.get("url", "")
             self.query_one("#body-input", TextArea).text = req.get("body", "") or ""
-
-            # Load saved headers into the headers editor
             req_headers = req.get("headers", {})
             self.query_one("#headers-input", TextArea).text = self.format_headers_text(req_headers)
-
             self.notify(f"Selected: {req.get('name')}", timeout=2)
         elif hasattr(item, "hook_data"):
             hook = item.hook_data
@@ -177,11 +351,8 @@ class GhostmanApp(App):
             if h_method in [m[0] for m in self.METHODS]:
                 self.query_one("#method-select", Select).value = h_method
             self.query_one("#body-input", TextArea).text = hook.get("raw_body", "") or ""
-
-            # Load captured hook headers
             hook_headers = hook.get("headers", {})
             self.query_one("#headers-input", TextArea).text = self.format_headers_text(hook_headers)
-
             self.query_one("#tabs", Tabs).active = "tab-body"
             self.notify(f"Loaded hook payload ({hook.get('path', '/')})", timeout=2)
 
@@ -191,6 +362,20 @@ class GhostmanApp(App):
         self.query_one("#tab-headers-pane").display = (tab_id == "tab-headers")
         self.query_one("#tab-response-pane").display = (tab_id == "tab-response")
         self.query_one("#tab-webhook-pane").display = (tab_id == "tab-webhook")
+        self.query_one("#tab-env-pane").display = (tab_id == "tab-env")
+
+    def on_select_changed(self, event: Select.Changed):
+        if self._env_switching:
+            return
+        if event.select.id == "env-select" and event.value != Select.BLANK:
+            new_env = str(event.value)
+            if new_env != self._active_env:
+                self._env_switching = True
+                try:
+                    self._auto_save_env_variables()
+                    self._load_env_into_editor(new_env)
+                finally:
+                    self._env_switching = False
 
     async def action_send_request(self):
         await self.send_http_request()
@@ -215,6 +400,28 @@ class GhostmanApp(App):
         else:
             self.notify("TLS Certificate Verification DISABLED (Insecure)", severity="warning", timeout=3)
 
+    def action_cycle_env(self):
+        envs = self.env_data.get("environments", [])
+        if len(envs) <= 1:
+            self.notify("Only one environment available", timeout=2)
+            return
+        self._auto_save_env_variables()
+        names = [e["name"] for e in envs]
+        try:
+            idx = names.index(self._active_env)
+            next_idx = (idx + 1) % len(names)
+        except ValueError:
+            next_idx = 0
+        next_name = names[next_idx]
+        self._load_env_into_editor(next_name)
+        self._env_switching = True
+        try:
+            self.query_one("#env-select", Select).value = next_name
+        except Exception:
+            pass
+        self._env_switching = False
+        self.notify(f"Switched to: {next_name}", timeout=2)
+
     async def on_button_pressed(self, event: Button.Pressed):
         btn_id = event.button.id
         if btn_id == "send-btn":
@@ -225,6 +432,13 @@ class GhostmanApp(App):
             self.action_new_request()
         elif btn_id == "webhook-toggle-btn":
             await self.action_toggle_webhook()
+        elif btn_id == "env-new-btn":
+            self._create_new_env()
+        elif btn_id == "env-del-btn":
+            self._delete_current_env()
+        elif btn_id == "env-save-btn":
+            self._save_current_env()
+            self.notify("Environment saved", timeout=2)
 
     def save_current_request(self):
         try:
@@ -238,13 +452,15 @@ class GhostmanApp(App):
             raw_headers = self.query_one("#headers-input", TextArea).text
             req_headers = self.parse_headers_text(raw_headers)
 
-            # Smart Content-Type detection if not explicitly set
-            if body and not any(k.lower() == "content-type" for k in req_headers):
+            env_vars = self._get_active_variables()
+            resolved_body = self.substitute_variables(body, env_vars) if body else body
+
+            if resolved_body and not any(k.lower() == "content-type" for k in req_headers):
                 try:
-                    json.loads(body)
+                    json.loads(resolved_body)
                     req_headers["Content-Type"] = "application/json"
                 except Exception:
-                    stripped = body.strip()
+                    stripped = resolved_body.strip()
                     if stripped.startswith("<?xml") or stripped.startswith("<soap:"):
                         req_headers["Content-Type"] = "application/xml"
                     else:
@@ -286,24 +502,29 @@ class GhostmanApp(App):
                 self.notify("URL cannot be empty", severity="error")
                 return
 
-            if not url.startswith("http://") and not url.startswith("https://"):
-                url = "https://" + url
-                self.query_one("#url-input", Input).value = url
+            env_vars = self._get_active_variables()
+            resolved_url = self.substitute_variables(url, env_vars)
+            resolved_body = self.substitute_variables(body, env_vars) if body else body
+            resolved_headers = {k: self.substitute_variables(v, env_vars) for k, v in req_headers.items()}
+
+            if not resolved_url.startswith("http://") and not resolved_url.startswith("https://"):
+                resolved_url = "https://" + resolved_url
+                if "{{" not in url:
+                    self.query_one("#url-input", Input).value = resolved_url
 
             self.query_one("#tabs", Tabs).active = "tab-response"
             metrics = self.query_one("#metrics-bar", Label)
             response_box = self.query_one("#response-area", TextArea)
 
-            metrics.update(f"Sending {method} to {url}...")
+            metrics.update(f"Sending {method} to {resolved_url}...")
             response_box.text = "Waiting for response..."
 
-            req_body = body if method in ["POST", "PUT", "PATCH", "DELETE"] else None
+            req_body = resolved_body if method in ["POST", "PUT", "PATCH", "DELETE"] else None
 
-            # Execute with full headers and TLS verification mode
             res = await self.network.execute_request(
                 method=method,
-                url=url,
-                headers=req_headers,
+                url=resolved_url,
+                headers=resolved_headers,
                 body=req_body,
                 verify_ssl=self.verify_ssl
             )

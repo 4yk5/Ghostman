@@ -63,9 +63,9 @@ class GhostmanApp(App):
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="header-bar"):
-            yield Label("[GHOSTMAN]", id="title-label")
+            yield Label("\\[GHOSTMAN]", id="title-label")
             yield Label("Terminal API & Webhook Studio (Local-First)", id="subtitle-label")
-            yield Label(f"[ENV: {self._active_env}]", id="env-indicator")
+            yield Label(f"\\[ENV: {self._active_env}]", id="env-indicator")
 
         with Horizontal(id="main-container"):
             with Vertical(id="sidebar"):
@@ -102,7 +102,7 @@ class GhostmanApp(App):
 
                 with Vertical(id="tab-webhook-pane"):
                     with Horizontal(id="webhook-status"):
-                        yield Label("Webhook Receiver: [OFFLINE] (Port 9090)", id="webhook-status-label")
+                        yield Label("Webhook Receiver: \\[OFFLINE] (Port 9090)", id="webhook-status-label")
                         yield Button("START RECEIVER", id="webhook-toggle-btn")
                     yield Label("Send requests to http://127.0.0.1:9090 to inspect payloads live:")
                     yield ListView(id="webhook-list")
@@ -205,7 +205,7 @@ class GhostmanApp(App):
 
     def _update_env_indicator(self):
         try:
-            self.query_one("#env-indicator", Label).update(f"[ENV: {self._active_env}]")
+            self.query_one("#env-indicator", Label).update(f"\\[ENV: {self._active_env}]")
         except Exception:
             pass
 
@@ -325,7 +325,7 @@ class GhostmanApp(App):
                         continue
                     method = req.get("method", "GET").upper()
                     name = req.get("name", "Request")
-                    item = ListItem(Label(f"[{method}] {name}"))
+                    item = ListItem(Label(f"\\[{method}] {name}"))
                     item.req_data = req
                     list_view.append(item)
         except Exception as e:
@@ -550,7 +550,7 @@ class GhostmanApp(App):
         if not self.webhook_server.is_running:
             try:
                 await self.webhook_server.start()
-                lbl.update("[green][ONLINE][/] (Listening on http://127.0.0.1:9090)")
+                lbl.update("[green]\\[ONLINE][/] (Listening on http://127.0.0.1:9090)")
                 btn.label = "STOP RECEIVER"
                 btn.variant = "error"
                 self.notify("Webhook listener started on :9090")
@@ -561,7 +561,7 @@ class GhostmanApp(App):
                 await self.webhook_server.stop()
             except Exception:
                 pass
-            lbl.update("Webhook Receiver: [OFFLINE] (Port 9090)")
+            lbl.update("Webhook Receiver: \\[OFFLINE] (Port 9090)")
             btn.label = "START RECEIVER"
             btn.variant = "default"
             self.notify("Webhook listener stopped")
